@@ -851,6 +851,7 @@ SVG-ГРАДИЕНТЫ (скрытые)
   padding: 0;
   align-items: stretch;
   justify-content: flex-start;
+  min-width: 0;
 }
 
 .raids-header {
@@ -893,66 +894,57 @@ SVG-ГРАДИЕНТЫ (скрытые)
 
 .schedule-scroll {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 20px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 .schedule-timeline {
-  display: flex;
+  min-width: max-content;
   min-height: 100%;
-  position: relative;
 }
 
-.schedule-axis {
-  display: flex;
-  flex-direction: column;
-  padding-right: 12px;
-  border-right: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.schedule-axis-tick {
-  height: 120px;
+/* Figma/UML-подобная доска: каждый реально используемый день — отдельная колонка. */
+.schedule-board {
   display: flex;
   align-items: flex-start;
-  justify-content: flex-end;
-  font-family: var(--font-display);
-  font-size: 12px;
-  color: var(--text-dim);
-  letter-spacing: 1px;
-  padding-top: 4px;
+  gap: 14px;
+  min-width: max-content;
+  min-height: 100%;
 }
 
-.schedule-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+.schedule-day-column {
+  width: 260px;
+  min-width: 260px;
+  background: rgba(16, 16, 21, 0.55);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
 }
 
-.schedule-day {
-  position: relative;
+.schedule-day-header {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  padding: 11px 14px;
   border-bottom: 1px solid var(--border);
-  min-width: 800px;
-}
-
-.schedule-day-label {
-  position: absolute;
-  left: 0;
-  top: 4px;
+  background: rgba(16, 16, 21, 0.96);
+  color: var(--gold-hi);
   font-family: var(--font-display);
   font-size: 12px;
   letter-spacing: 2px;
   text-transform: uppercase;
-  color: var(--gold-bright);
-  z-index: 2;
-  padding: 2px 8px;
-  background: var(--bg-panel);
-  border-radius: 3px;
+  text-align: center;
+  backdrop-filter: blur(8px);
 }
 
-.schedule-slots {
+.schedule-day-track {
   position: relative;
-  height: 100%;
+  min-height: 90px;
+  padding: 14px 10px 18px;
 }
 
 .schedule-empty {
@@ -969,24 +961,26 @@ SVG-ГРАДИЕНТЫ (скрытые)
 /* ---------- Карточка рейда ---------- */
 .raid-card {
   position: absolute;
-  top: 30px;
-  width: 180px;
-  min-height: 80px;
-  background: var(--bg-card);
+  left: 10px;
+  right: 10px;
+  min-height: 110px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.025), transparent 42%),
+    var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 8px 10px;
+  padding: 10px;
   cursor: default;
-  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s, transform 0.15s;
   z-index: 1;
 }
 .raid-card:hover {
   border-color: var(--border-strong);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 7px 22px rgba(0, 0, 0, 0.45);
 }
 .raid-card.drag-over {
   border-color: var(--gold);
-  box-shadow: 0 0 0 2px rgba(201, 160, 60, 0.5);
+  box-shadow: 0 0 0 2px rgba(201, 160, 60, 0.42), 0 8px 24px rgba(0,0,0,.45);
   background: var(--bg-card-hover);
 }
 
@@ -994,7 +988,8 @@ SVG-ГРАДИЕНТЫ (скрытые)
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
+  min-height: 22px;
+  margin-bottom: 4px;
   position: relative;
 }
 
@@ -1005,6 +1000,7 @@ SVG-ГРАДИЕНТЫ (скрытые)
   letter-spacing: 1px;
   color: var(--text-primary);
   flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1016,9 +1012,10 @@ SVG-ГРАДИЕНТЫ (скрытые)
   text-transform: uppercase;
   padding: 1px 5px;
   border-radius: 3px;
+  flex-shrink: 0;
 }
 .raid-mode-normal { color: #b8bcc6; border: 1px solid rgba(184, 188, 198, 0.4); }
-.raid-mode-hard   { color: var(--gold-bright); border: 1px solid rgba(201, 160, 60, 0.5); }
+.raid-mode-hard   { color: var(--gold-hi); border: 1px solid rgba(201, 160, 60, 0.5); }
 .raid-mode-nightmare {
   color: var(--crystal);
   border: 1px solid rgba(160, 108, 224, 0.5);
@@ -1031,17 +1028,25 @@ SVG-ГРАДИЕНТЫ (скрытые)
   font-weight: 700;
   color: var(--silver);
   letter-spacing: 1px;
+  flex-shrink: 0;
 }
-.raid-card-counter.full {
-  color: var(--red);
+.raid-card-counter.full { color: var(--red); }
+
+.raid-card-time {
+  margin: 1px 0 8px;
+  color: var(--text-dim);
+  font-family: 'Marcellus', serif;
+  font-size: 10px;
+  letter-spacing: 1px;
 }
 
+/* Крестик удаления рейда появляется только при наведении на шапку. */
 .raid-card-delete {
   position: absolute;
-  top: -6px;
-  right: -6px;
-  width: 18px;
-  height: 18px;
+  top: -7px;
+  right: -7px;
+  width: 19px;
+  height: 19px;
   border-radius: 50%;
   border: 1px solid var(--border-strong);
   background: var(--bg-panel);
@@ -1054,8 +1059,10 @@ SVG-ГРАДИЕНТЫ (скрытые)
   padding: 0;
   line-height: 1;
   transition: all 0.2s;
+  z-index: 4;
 }
-.raid-card:hover .raid-card-delete {
+.raid-card-header:hover .raid-card-delete,
+.raid-card-delete:hover {
   display: flex;
 }
 .raid-card-delete:hover {
@@ -1074,66 +1081,83 @@ SVG-ГРАДИЕНТЫ (скрытые)
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 4px;
-  border-radius: 3px;
+  min-height: 24px;
+  padding: 3px 4px;
+  border-radius: 4px;
   font-size: 11px;
   position: relative;
-  transition: background 0.2s;
+  transition: background 0.15s, filter 0.15s;
 }
 .raid-signup-row:hover {
   background: rgba(255, 255, 255, 0.04);
 }
 .raid-signup-row.mine:hover {
-  background: rgba(201, 160, 60, 0.1);
+  background: rgba(0, 0, 0, 0.42);
+}
+.raid-signup-row.mine:hover > :not(.raid-signup-delete) {
+  opacity: 0.32;
 }
 
 .raid-signup-icon {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   fill: var(--silver);
   flex-shrink: 0;
+  transition: opacity 0.15s;
 }
 
 .raid-signup-name {
   flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-primary);
+  transition: opacity 0.15s;
 }
 
 .raid-signup-ilvl {
   font-family: 'Marcellus', serif;
   font-size: 11px;
   letter-spacing: 0.5px;
+  transition: opacity 0.15s;
 }
 
+/* На своём персонаже крестик находится прямо по центру затемнённой строки. */
 .raid-signup-delete {
-  width: 16px;
-  height: 16px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  border: none;
-  background: transparent;
+  border: 1px solid rgba(224,48,48,.45);
+  background: rgba(12,12,15,.9);
   color: var(--red);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
   display: none;
   align-items: center;
   justify-content: center;
   padding: 0;
   line-height: 1;
+  z-index: 3;
 }
-.raid-signup-row:hover .raid-signup-delete {
-  display: flex;
-}
+.raid-signup-row:hover .raid-signup-delete { display: flex; }
 .raid-signup-delete:hover {
-  background: rgba(224, 48, 48, 0.2);
+  border-color: var(--red);
+  background: rgba(224,48,48,.2);
 }
 
-/* ---------- Драг персонажа ---------- */
-.char-card.dragging {
-  opacity: 0.4;
+/* ---------- Драг персонажа / SortableJS ---------- */
+.char-card.dragging { opacity: 0.4; }
+.char-drag-ghost {
+  opacity: 0.78 !important;
+  transform: rotate(1deg);
+  box-shadow: 0 12px 30px rgba(0,0,0,.55);
 }
+.char-drag-chosen { cursor: grabbing !important; }
 
 /* ---------- Модалка создания рейда ---------- */
 .raid-type-grid,
@@ -1144,6 +1168,7 @@ SVG-ГРАДИЕНТЫ (скрытые)
 }
 
 .raid-type-option {
+  appearance: none;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1157,13 +1182,16 @@ SVG-ГРАДИЕНТЫ (скрытые)
   color: var(--text-primary);
   transition: all 0.2s;
 }
-.raid-type-option:hover {
+.raid-type-option:hover,
+.raid-type-option:focus-visible {
   border-color: var(--gold);
-  color: var(--gold-bright);
+  color: var(--gold-hi);
   background: var(--bg-card-hover);
+  outline: none;
 }
 
 .raid-mode-option {
+  appearance: none;
   padding: 16px 12px;
   text-align: center;
   border-radius: var(--radius-sm);
@@ -1172,16 +1200,31 @@ SVG-ГРАДИЕНТЫ (скрытые)
   cursor: pointer;
   font-family: var(--font-display);
   font-size: 13px;
-  letter-spacing: 2px;
+  letter-spacing: 1.5px;
   text-transform: uppercase;
+  color: var(--text-primary);
   transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
 }
-.raid-mode-option.raid-mode-normal:hover { border-color: var(--silver); color: var(--silver-hi); }
-.raid-mode-option.raid-mode-hard:hover   { border-color: var(--gold); color: var(--gold-bright); }
-.raid-mode-option.raid-mode-nightmare:hover {
+.raid-mode-option span {
+  font-family: var(--font-body);
+  font-size: 10px;
+  letter-spacing: .5px;
+  text-transform: none;
+  color: var(--text-dim);
+}
+.raid-mode-option.raid-mode-normal:hover,
+.raid-mode-option.raid-mode-normal:focus-visible { border-color: var(--silver); color: var(--silver-hi); outline: none; }
+.raid-mode-option.raid-mode-hard:hover,
+.raid-mode-option.raid-mode-hard:focus-visible { border-color: var(--gold); color: var(--gold-hi); outline: none; }
+.raid-mode-option.raid-mode-nightmare:hover,
+.raid-mode-option.raid-mode-nightmare:focus-visible {
   border-color: var(--crystal);
   color: var(--crystal);
   background: linear-gradient(135deg, var(--bg-card) 0%, rgba(160, 108, 224, 0.15) 100%);
+  outline: none;
 }
 
 .raid-ilvl-hint {
@@ -1200,6 +1243,7 @@ SVG-ГРАДИЕНТЫ (скрытые)
 .raid-date-input,
 .raid-time-input {
   flex: 1;
+  min-width: 0;
   background: var(--bg-input);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -1211,9 +1255,7 @@ SVG-ГРАДИЕНТЫ (скрытые)
   transition: border-color 0.2s;
 }
 .raid-date-input:focus,
-.raid-time-input:focus {
-  border-color: var(--gold);
-}
+.raid-time-input:focus { border-color: var(--gold); }
 
 .raid-create-btn {
   width: 100%;
@@ -1228,6 +1270,11 @@ SVG-ГРАДИЕНТЫ (скрытые)
   letter-spacing: 3px;
   text-transform: uppercase;
   cursor: pointer;
-  transition: filter 0.2s;
+  transition: filter 0.2s, transform 0.1s;
 }
 .raid-create-btn:hover { filter: brightness(1.15); }
+.raid-create-btn:active { transform: translateY(1px); }
+
+@media (max-width: 900px) {
+  .schedule-day-column { width: 240px; min-width: 240px; }
+}
