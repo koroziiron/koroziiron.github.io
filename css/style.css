@@ -841,3 +841,393 @@ SVG-ГРАДИЕНТЫ (скрытые)
     order: -1;
   }
 }
+
+/* ============================================================
+   РАСПИСАНИЕ РЕЙДОВ
+   ============================================================ */
+.raids-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+.raids-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.raids-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.raid-add-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  padding: 0;
+}
+.raid-add-btn svg { width: 16px; height: 16px; }
+.raid-add-btn:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: rgba(201, 160, 60, 0.08);
+}
+
+.schedule-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+}
+
+.schedule-timeline {
+  display: flex;
+  min-height: 100%;
+  position: relative;
+}
+
+.schedule-axis {
+  display: flex;
+  flex-direction: column;
+  padding-right: 12px;
+  border-right: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.schedule-axis-tick {
+  height: 120px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  font-family: var(--font-display);
+  font-size: 12px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  padding-top: 4px;
+}
+
+.schedule-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.schedule-day {
+  position: relative;
+  border-bottom: 1px solid var(--border);
+  min-width: 800px;
+}
+
+.schedule-day-label {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gold-bright);
+  z-index: 2;
+  padding: 2px 8px;
+  background: var(--bg-panel);
+  border-radius: 3px;
+}
+
+.schedule-slots {
+  position: relative;
+  height: 100%;
+}
+
+.schedule-empty {
+  color: var(--text-dim);
+  font-family: var(--font-display);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  font-size: 14px;
+  padding: 40px;
+  text-align: center;
+  width: 100%;
+}
+
+/* ---------- Карточка рейда ---------- */
+.raid-card {
+  position: absolute;
+  top: 30px;
+  width: 180px;
+  min-height: 80px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  cursor: default;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+  z-index: 1;
+}
+.raid-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.raid-card.drag-over {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(201, 160, 60, 0.5);
+  background: var(--bg-card-hover);
+}
+
+.raid-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  position: relative;
+}
+
+.raid-card-title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text-primary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.raid-card-mode {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.raid-mode-normal { color: #b8bcc6; border: 1px solid rgba(184, 188, 198, 0.4); }
+.raid-mode-hard   { color: var(--gold-bright); border: 1px solid rgba(201, 160, 60, 0.5); }
+.raid-mode-nightmare {
+  color: var(--crystal);
+  border: 1px solid rgba(160, 108, 224, 0.5);
+  background: linear-gradient(135deg, transparent 0%, rgba(160, 108, 224, 0.1) 100%);
+}
+
+.raid-card-counter {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--silver);
+  letter-spacing: 1px;
+}
+.raid-card-counter.full {
+  color: var(--red);
+}
+
+.raid-card-delete {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  transition: all 0.2s;
+}
+.raid-card:hover .raid-card-delete {
+  display: flex;
+}
+.raid-card-delete:hover {
+  border-color: var(--red);
+  color: var(--red);
+  background: rgba(224, 48, 48, 0.15);
+}
+
+.raid-card-signups {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.raid-signup-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  position: relative;
+  transition: background 0.2s;
+}
+.raid-signup-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.raid-signup-row.mine:hover {
+  background: rgba(201, 160, 60, 0.1);
+}
+
+.raid-signup-icon {
+  width: 16px;
+  height: 16px;
+  fill: var(--silver);
+  flex-shrink: 0;
+}
+
+.raid-signup-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+
+.raid-signup-ilvl {
+  font-family: 'Marcellus', serif;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+
+.raid-signup-delete {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--red);
+  cursor: pointer;
+  font-size: 10px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+}
+.raid-signup-row:hover .raid-signup-delete {
+  display: flex;
+}
+.raid-signup-delete:hover {
+  background: rgba(224, 48, 48, 0.2);
+}
+
+/* ---------- Драг персонажа ---------- */
+.char-card.dragging {
+  opacity: 0.4;
+}
+
+/* ---------- Модалка создания рейда ---------- */
+.raid-type-grid,
+.raid-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.raid-type-option {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 20px 12px;
+  text-align: center;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  transition: all 0.2s;
+}
+.raid-type-option:hover {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  background: var(--bg-card-hover);
+}
+
+.raid-mode-option {
+  padding: 16px 12px;
+  text-align: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  transition: all 0.2s;
+}
+.raid-mode-option.raid-mode-normal:hover { border-color: var(--silver); color: var(--silver-hi); }
+.raid-mode-option.raid-mode-hard:hover   { border-color: var(--gold); color: var(--gold-bright); }
+.raid-mode-option.raid-mode-nightmare:hover {
+  border-color: var(--crystal);
+  color: var(--crystal);
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(160, 108, 224, 0.15) 100%);
+}
+
+.raid-ilvl-hint {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-bottom: 16px;
+  letter-spacing: 1px;
+}
+
+.raid-datetime-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.raid-date-input,
+.raid-time-input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.raid-date-input:focus,
+.raid-time-input:focus {
+  border-color: var(--gold);
+}
+
+.raid-create-btn {
+  width: 100%;
+  background: linear-gradient(180deg, #c9a03c 0%, #8a6a20 100%);
+  border: 1px solid #6a4f15;
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  color: #0a0a0d;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: filter 0.2s;
+}
+.raid-create-btn:hover { filter: brightness(1.15); }

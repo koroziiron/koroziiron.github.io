@@ -7,23 +7,36 @@ import {
   getClasses,
   saveChanges,
   ping,
+  getRaidsInRange,
+  createRaid,
+  deleteRaid,
+  signup,
+  unsign,
+  getRaidTypes,
 } from './api.js';
 
 // ------------------------------------------------------------
 // ГЛОБАЛЬНОЕ СОСТОЯНИЕ
 // ------------------------------------------------------------
 const state = {
-  member: null,           // { id, nickname }
-  characters: [],         // загруженные из БД
-  classes: [],            // справочник классов
+  member: null,
+  characters: [],
+  classes: [],
   editMode: false,
   draft: {
-    updated: {},          // { charId: { item_level, combat_power } }
-    inserted: [],         // [{ tempId, name, class_id, icon_id, role, item_level, combat_power }]
-    deleted: new Set(),   // Set of charId
+    updated: {},
+    inserted: [],
+    deleted: new Set(),
   },
-  pendingClass: null,     // { id, name, role, icon_id } — выбранный класс в модалке
+  pendingClass: null,
   tempIdCounter: 0,
+
+  // НОВОЕ:
+  raids: [],              // рейды текущей недели
+  raidTypes: [],          // справочник рейдов из БД
+  weekStart: null,        // Date начала недели (среда 6:00 МСК)
+  weekEnd: null,          // Date конца недели
+  draggingCharacter: null,// персонаж, которого тащат
 };
 
 // ------------------------------------------------------------
@@ -136,6 +149,26 @@ async function enterMain() {
   renderCharacters();
 }
 
+async function enterMain() {
+  $('header-nickname').textContent = state.member.nickname;
+  showScreen('main');
+
+  if (state.classes.length === 0) {
+    const r = await getClasses();
+    if (r.classes) state.classes = r.classes;
+  }
+
+  if (state.raidTypes.length === 0) {
+    const r = await getRaidTypes();
+    if (r.raidTypes) state.raidTypes = r.raidTypes;
+  }
+
+  await loadCharacters();
+  await loadRaids();
+  renderCharacters();
+  renderSchedule();
+}
+
 // ------------------------------------------------------------
 // ВЫХОД
 // ------------------------------------------------------------
@@ -206,6 +239,19 @@ function buildCharCard(ch, isNew) {
   const card = document.createElement('div');
   card.className = 'char-card';
   card.dataset.charId = ch.id;
+card.draggable = true;  // ← НОВОЕ
+
+  // НОВОЕ: drag
+  card.addEventListener('dragstart', e => {
+    state.draggingCharacter = ch;
+    e.dataTransfer.setData('text/character-id', ch.id);
+    e.dataTransfer.effectAllowed = 'move';
+    card.classList.add('dragging');
+  });
+  card.addEventListener('dragend', () => {
+    state.draggingCharacter = null;
+    card.classList.remove('dragging');
+  });
   
   // Помечен на удаление?
   if (state.draft.deleted.has(ch.id)) {
@@ -557,6 +603,440 @@ $('new-char-name').addEventListener('keydown', e => {
     e.preventDefault();
     createCharacter();
   }
+});
+
+// ------------------------------------------------------------
+// НЕДЕЛЯ: границы (среда 6:00 МСК)
+// ------------------------------------------------------------
+function getWeekBounds(date = new Date()) {
+  // Приводим к МСК
+  const mskOffset = 3 * 60; // минуты
+  const local = new Date(date.getTime() + (date.getTimezoneOffset() + mskOffset) * 60000);
+
+  const day = local.getDay(); // 0=Вс, 1=Пн, ..., 3=Ср
+  const hour = local.getHours();
+
+  // Определяем, сколько дней назад была среда 6:00
+  let daysBack;
+  if (day === 3 && hour >= 6) {
+    daysBack = 0;
+  } else if (day === 3 && hour < 6) {
+    daysBack = 7;
+  } else if (day > 3) {
+    daysBack = day - 3;
+  } else {
+    daysBack = day + 4;
+  }
+
+  const start = new Date(local);
+  start.setDate(start.getDate() - daysBack);
+  start.setHours(6, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setDate(end.getDate() + 7);
+
+  // Возвращаем в UTC для запросов в БД
+  const startUtc = new Date(start.getTime() - mskOffset * 60000);
+  const endUtc = new Date(end.getTime() - mskOffset * 60000);
+
+  return { start: startUtc, end: endUtc };
+}
+
+async function loadRaids() {
+  const { start, end } = getWeekBounds();
+  state.weekStart = start;
+  state.weekEnd = end;
+
+  const r = await getRaidsInRange(start.toISOString(), end.toISOString());
+  if (r.error) {
+    showToast('Не удалось загрузить рейды', 'error');
+    return;
+  }
+  state.raids = r.raids || [];
+}
+
+// ------------------------------------------------------------
+// РЕНДЕР РАСПИСАНИЯ
+// ------------------------------------------------------------
+function renderSchedule() {
+  const container = document.getElementById('schedule-timeline');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  if (state.raids.length === 0) {
+    container.innerHTML = '<div class="schedule-empty">На эту неделю рейды не запланированы</div>';
+    return;
+  }
+
+  // Группируем рейды по дням
+  const byDay = {};
+  let minHour = 24, maxHour = 0;
+
+  for (const raid of state.raids) {
+    const dt = new Date(raid.datetime);
+    const dayKey = dt.toDateString();
+    if (!byDay[dayKey]) byDay[dayKey] = { date: dt, raids: [] };
+    byDay[dayKey].raids.push(raid);
+
+    const h = dt.getHours();
+    if (h < minHour) minHour = h;
+    if (h > maxHour) maxHour = h;
+  }
+
+  // Сортируем дни по дате
+  const days = Object.values(byDay).sort((a, b) => a.date - b.date);
+
+  // Сетка: слева ось времени, справа дни
+  const leftAxis = document.createElement('div');
+  leftAxis.className = 'schedule-axis';
+  for (let h = minHour; h <= maxHour; h++) {
+    const tick = document.createElement('div');
+    tick.className = 'schedule-axis-tick';
+    tick.textContent = `${String(h).padStart(2, '0')}:00`;
+    leftAxis.appendChild(tick);
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'schedule-grid';
+
+  const HOUR_WIDTH = 80;
+  const DAY_HEIGHT = 120;
+
+  for (const day of days) {
+    const dayCol = document.createElement('div');
+    dayCol.className = 'schedule-day';
+    dayCol.style.height = `${DAY_HEIGHT}px`;
+
+    const dayLabel = document.createElement('div');
+    dayLabel.className = 'schedule-day-label';
+    dayLabel.textContent = formatDayLabel(day.date);
+    dayCol.appendChild(dayLabel);
+
+    // Внутри дня — контейнер для карточек
+    const slots = document.createElement('div');
+    slots.className = 'schedule-slots';
+    slots.style.width = `${(maxHour - minHour + 2) * HOUR_WIDTH}px`;
+
+    for (const raid of day.raids) {
+      const dt = new Date(raid.datetime);
+      const offsetX = ((dt.getHours() - minHour) + dt.getMinutes() / 60) * HOUR_WIDTH;
+      const card = buildRaidCard(raid);
+      card.style.left = `${offsetX}px`;
+      slots.appendChild(card);
+    }
+
+    dayCol.appendChild(slots);
+    grid.appendChild(dayCol);
+  }
+
+  container.appendChild(leftAxis);
+  container.appendChild(grid);
+}
+
+function formatDayLabel(date) {
+  const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+  const months = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]}`;
+}
+
+function buildRaidCard(raid) {
+  const card = document.createElement('div');
+  card.className = 'raid-card';
+  card.dataset.raidId = raid.id;
+
+  const rt = raid.raid_types;
+  const signed = raid.signups?.length || 0;
+  const max = raid.max_players;
+  const isFull = signed >= max;
+
+  // Шапка: название + сложность + счётчик
+  const header = document.createElement('div');
+  header.className = 'raid-card-header';
+
+  const title = document.createElement('div');
+  title.className = 'raid-card-title';
+  title.textContent = rt.name;
+  header.appendChild(title);
+
+  const mode = document.createElement('span');
+  mode.className = 'raid-card-mode raid-mode-' + rt.mode.toLowerCase();
+  mode.textContent = rt.mode;
+  header.appendChild(mode);
+
+  const counter = document.createElement('div');
+  counter.className = 'raid-card-counter' + (isFull ? ' full' : '');
+  counter.textContent = `${signed}/${max}`;
+  header.appendChild(counter);
+
+  // Кнопка удаления (если можно)
+  if (canDeleteRaid(raid)) {
+    const del = document.createElement('button');
+    del.className = 'raid-card-delete';
+    del.title = 'Удалить рейд';
+    del.innerHTML = '✕';
+    del.addEventListener('click', async e => {
+      e.stopPropagation();
+      if (!confirm(`Удалить рейд «${rt.name} ${rt.mode}»?`)) return;
+      const r = await deleteRaid(raid.id);
+      if (r.error) {
+        showToast('Не удалось удалить рейд', 'error');
+        return;
+      }
+      showToast('Рейд удалён', 'success');
+      await loadRaids();
+      renderSchedule();
+    });
+    header.appendChild(del);
+  }
+
+  card.appendChild(header);
+
+  // Список записавшихся
+  const list = document.createElement('div');
+  list.className = 'raid-card-signups';
+
+  for (const s of (raid.signups || [])) {
+    const row = document.createElement('div');
+    row.className = 'raid-signup-row';
+    if (s.member_id === state.member.id) row.classList.add('mine');
+
+    const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    iconSvg.setAttribute('class', 'raid-signup-icon');
+    const iconId = s.characters?.classes?.icon_id || 'berserker';
+    iconSvg.setAttribute('viewBox', getIconViewBox(iconId));
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', '#' + iconId);
+    iconSvg.appendChild(use);
+    row.appendChild(iconSvg);
+
+    const name = document.createElement('span');
+    name.className = 'raid-signup-name';
+    name.textContent = s.characters?.name || '???';
+    row.appendChild(name);
+
+    const ilvl = document.createElement('span');
+    ilvl.className = 'raid-signup-ilvl ' + getGsClass(s.characters?.item_level);
+    ilvl.textContent = s.characters?.item_level || 0;
+    row.appendChild(ilvl);
+
+    // Кнопка удаления записи (свои или админ)
+    if (s.member_id === state.member.id || state.member.nickname === 'korozii') {
+      const del = document.createElement('button');
+      del.className = 'raid-signup-delete';
+      del.title = 'Убрать с рейда';
+      del.innerHTML = '✕';
+      del.addEventListener('click', async e => {
+        e.stopPropagation();
+        const r = await unsign(s.id);
+        if (r.error) {
+          showToast('Не удалось убрать', 'error');
+          return;
+        }
+        showToast('Убран с рейда', 'success');
+        await loadRaids();
+        renderSchedule();
+      });
+      row.appendChild(del);
+    }
+
+    list.appendChild(row);
+  }
+
+  card.appendChild(list);
+
+  // Права на удаление рейда
+  function canDeleteRaid(raid) {
+    if (state.member.nickname === 'korozii') return true;
+    if (raid.created_by === state.member.id) {
+      // Только если на рейде нет других записей кроме создателя
+      const otherSignups = (raid.signups || []).filter(s => s.member_id !== raid.created_by);
+      return otherSignups.length === 0;
+    }
+    return false;
+  }
+
+  // Drop-зона
+  card.addEventListener('dragover', e => {
+    e.preventDefault();
+    if (card.classList.contains('drag-over')) return;
+    card.classList.add('drag-over');
+  });
+
+  card.addEventListener('dragleave', () => {
+    card.classList.remove('drag-over');
+  });
+
+  card.addEventListener('drop', async e => {
+    e.preventDefault();
+    card.classList.remove('drag-over');
+
+    const charId = e.dataTransfer.getData('text/character-id');
+    if (!charId) return;
+    const character = state.characters.find(c => c.id === charId);
+    if (!character) return;
+
+    // Проверки
+    const err = validateSignup(raid, character);
+    if (err) {
+      showToast(err, 'error');
+      return;
+    }
+
+    const r = await signup({
+      raid_id: raid.id,
+      character_id: character.id,
+      member_id: state.member.id,
+      role: character.classes?.role || 'DPS',
+    });
+
+    if (r.error) {
+      showToast('Ошибка записи', 'error');
+      console.error(r.error);
+      return;
+    }
+
+    showToast('Записан на рейд', 'success');
+    await loadRaids();
+    renderSchedule();
+  });
+
+  return card;
+}
+
+// Валидация записи
+function validateSignup(raid, character) {
+  const rt = raid.raid_types;
+  const signed = raid.signups?.length || 0;
+
+  // ГС
+  if (parseFloat(character.item_level) < parseFloat(rt.required_ilvl)) {
+    return `Нужен ГС ${rt.required_ilvl}, у ${character.name} — ${character.item_level}`;
+  }
+
+  // Полнота
+  if (signed >= raid.max_players) {
+    return 'Рейд заполнен';
+  }
+
+  // Тот же игрок уже на этом рейде (через любого персонажа)
+  const sameMember = (raid.signups || []).some(s => s.member_id === state.member.id);
+  if (sameMember) {
+    return 'Ты уже записан на этот рейд другим персонажем';
+  }
+
+  // Тот же персонаж уже на рейде с таким же name в текущей неделе
+  const sameCharOnSameBoss = state.raids.some(r => {
+    if (r.raid_types.name !== rt.name) return false;
+    return (r.signups || []).some(s => s.character_id === character.id);
+  });
+  if (sameCharOnSameBoss) {
+    return `${character.name} уже записан на ${rt.name} на этой неделе`;
+  }
+
+  return null;
+}
+
+$('add-raid-btn').addEventListener('click', openRaidModal);
+
+function openRaidModal() {
+  $('modal-raid').classList.add('active');
+  $('raid-step-1').classList.add('active');
+  $('raid-step-2').classList.remove('active');
+  $('raid-step-3').classList.remove('active');
+  state.pendingRaidType = null;
+  renderRaidTypeGrid();
+}
+
+// Шаг 1: сетка рейдов
+function renderRaidTypeGrid() {
+  const grid = $('raid-type-grid');
+  grid.innerHTML = '';
+
+  // Уникальные имена рейдов
+  const names = [...new Set(state.raidTypes.map(rt => rt.name))];
+
+  for (const name of names) {
+    const opt = document.createElement('div');
+    opt.className = 'raid-type-option';
+    opt.textContent = name;
+    opt.addEventListener('click', () => selectRaidType(name));
+    grid.appendChild(opt);
+  }
+}
+
+// Шаг 2: выбор сложности
+function selectRaidType(name) {
+  state.pendingRaidTypeName = name;
+
+  $('raid-step-1').classList.remove('active');
+  $('raid-step-2').classList.add('active');
+
+  const grid = $('raid-mode-grid');
+  grid.innerHTML = '';
+
+  const modes = state.raidTypes.filter(rt => rt.name === name);
+
+  for (const rt of modes) {
+    const opt = document.createElement('div');
+    opt.className = 'raid-mode-option raid-mode-' + rt.mode.toLowerCase();
+    opt.textContent = rt.mode;
+    opt.addEventListener('click', () => selectRaidMode(rt));
+    grid.appendChild(opt);
+  }
+}
+
+// Шаг 3: выбор даты/времени
+function selectRaidMode(rt) {
+  state.pendingRaidType = rt;
+
+  $('raid-step-2').classList.remove('active');
+  $('raid-step-3').classList.add('active');
+
+  $('raid-mode-title').textContent = `${rt.name} — ${rt.mode}`;
+  $('raid-required-ilvl').textContent = rt.required_ilvl;
+
+  // Дата — минимум сегодня
+  const now = new Date();
+  const isoDate = now.toISOString().slice(0, 10);
+  $('raid-date-input').min = isoDate;
+  $('raid-date-input').value = isoDate;
+  $('raid-time-input').value = '20:00';
+}
+
+// Создать рейд
+$('raid-create-btn').addEventListener('click', async () => {
+  const date = $('raid-date-input').value;
+  const time = $('raid-time-input').value;
+
+  if (!date || !time) {
+    showToast('Выбери дату и время', 'error');
+    return;
+  }
+
+  const dt = new Date(`${date}T${time}:00`);
+  if (dt.getTime() < Date.now()) {
+    showToast('Нельзя создать рейд в прошлом', 'error');
+    return;
+  }
+
+  const r = await createRaid({
+    raid_type_id: state.pendingRaidType.id,
+    datetime: dt.toISOString(),
+    max_players: state.pendingRaidType.size,
+    created_by: state.member.id,
+  });
+
+  if (r.error) {
+    showToast('Не удалось создать рейд', 'error');
+    console.error(r.error);
+    return;
+  }
+
+  $('modal-raid').classList.remove('active');
+  showToast('Рейд создан', 'success');
+  await loadRaids();
+  renderSchedule();
 });
 
 // ------------------------------------------------------------
