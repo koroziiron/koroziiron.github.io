@@ -1,20 +1,17 @@
 /* ============================================================
-   ДИЗАЙН-СИСТЕМА
-   ============================================================ */
+ДИЗАЙН-СИСТЕМА
+============================================================ */
 :root {
   --bg-deep:       #08080b;
   --bg-panel:      #101015;
   --bg-card:       #16161c;
   --bg-card-hover: #1a1a22;
   --bg-input:      #0d0d12;
-
   --border:        #23232c;
   --border-strong: #3a3a48;
-
   --text-primary:  #e8e8ee;
   --text-muted:    #8a8a98;
   --text-dim:      #5a5a68;
-
   --silver:        #b8bcc6;
   --silver-hi:     #e8ecf4;
   --gold:          #c9a03c;
@@ -24,10 +21,8 @@
   --green:         #5adf7a;
   --green-dark:    #2a6a3a;
   --crystal:       #a06ce0;
-
   --radius:        10px;
   --radius-sm:     6px;
-
   --font-display:  'Cinzel', serif;
   --font-body:     'Inter', sans-serif;
 }
@@ -44,8 +39,8 @@ html, body {
 }
 
 /* ============================================================
-   SVG-ГРАДИЕНТЫ (скрытые)
-   ============================================================ */
+SVG-ГРАДИЕНТЫ (скрытые)
+============================================================ */
 .svg-defs {
   position: absolute;
   width: 0;
@@ -54,8 +49,8 @@ html, body {
 }
 
 /* ============================================================
-   ЭКРАНЫ
-   ============================================================ */
+ЭКРАНЫ
+============================================================ */
 .screen {
   display: none;
   min-height: 100vh;
@@ -211,8 +206,8 @@ html, body {
 }
 
 /* ============================================================
-   ОСНОВНОЙ ЭКРАН
-   ============================================================ */
+ОСНОВНОЙ ЭКРАН
+============================================================ */
 .screen-main {
   flex-direction: column;
 }
@@ -308,7 +303,6 @@ html, body {
   flex-direction: column;
   overflow: hidden;
 }
-
 .characters-header {
   display: flex;
   align-items: center;
@@ -389,6 +383,7 @@ html, body {
   text-decoration: line-through;
 }
 
+/* === ПРАВКА 1: Иконки персонажей — пульс + блик === */
 .char-icon-wrap {
   position: relative;
   width: 44px;
@@ -397,14 +392,70 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: var(--radius-sm);
+  /* Мягкая белая подсветка снизу + пульсация */
+  box-shadow: 0 4px 12px -4px rgba(220, 230, 250, 0.35);
+  animation: icon-pulse 3.5s ease-in-out infinite;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  overflow: hidden;
 }
+
+/* Медленная пульсация белой подсветки снизу */
+@keyframes icon-pulse {
+  0%, 100% {
+    box-shadow: 0 4px 12px -4px rgba(220, 230, 250, 0.3);
+  }
+  50% {
+    box-shadow: 0 6px 18px -3px rgba(220, 230, 250, 0.55);
+  }
+}
+
+/* Иконка внутри */
 .char-icon {
   width: 100%;
   height: 100%;
   fill: var(--silver);
-  transition: filter 0.2s;
+  transition: filter 0.3s ease;
+  position: relative;
+  z-index: 1;
 }
-/* В режиме редактирования иконка кликабельна */
+
+/* Блик, пробегающий при наведении */
+.char-icon-wrap .shine {
+  position: absolute;
+  top: -20%;
+  left: -100%;
+  width: 60%;
+  height: 140%;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.55) 50%,
+    transparent 100%
+  );
+  transform: rotate(20deg);
+  pointer-events: none;
+  z-index: 2;
+  transition: left 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Состояние при наведении */
+.char-card:hover .char-icon-wrap {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px -3px rgba(201, 160, 60, 0.7);
+  animation: none;
+}
+
+.char-card:hover .char-icon-wrap .shine {
+  left: 150%;
+}
+
+.char-card:hover .char-icon {
+  filter: drop-shadow(0 0 6px rgba(201, 160, 60, 0.6));
+}
+/* ============================================================ */
+
+/* В режиме редактирования иконка кликабельна (оставлено как есть) */
 .edit-mode .char-card .char-icon-wrap {
   cursor: pointer;
 }
@@ -452,16 +503,20 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* === ПРАВКА 2: Шрифт GS/BS — крупнее и читаемее === */
 .char-stats {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  font-size: 12px;
-  font-family: var(--font-display);
-  letter-spacing: 1px;
+  font-size: 15px;
+  font-family: 'Marcellus', var(--font-display);
+  letter-spacing: 1.2px;
   width: 100%;
 }
+/* ============================================================ */
+
 .char-stats > span:last-child {
   margin-left: auto;
   padding-right: 8px;
@@ -545,8 +600,8 @@ html, body {
 }
 
 /* ============================================================
-   МОДАЛКА ВЫБОРА КЛАССА
-   ============================================================ */
+МОДАЛКА ВЫБОРА КЛАССА
+============================================================ */
 .modal-overlay {
   display: none;
   position: fixed;
@@ -597,7 +652,6 @@ html, body {
   color: var(--red);
   background: rgba(224, 48, 48, 0.1);
 }
-
 .modal-step {
   display: none;
   padding: 24px;
@@ -670,7 +724,6 @@ html, body {
 }
 .class-option.dps:hover .class-icon { fill: #f0a0a0; }
 .class-option.support:hover .class-icon { fill: #a0f0b0; }
-
 .class-option-label {
   font-family: var(--font-display);
   font-size: 11px;
@@ -744,8 +797,8 @@ html, body {
 }
 
 /* ============================================================
-   ТОСТ
-   ============================================================ */
+ТОСТ
+============================================================ */
 .toast {
   position: fixed;
   bottom: 24px;
@@ -778,8 +831,8 @@ html, body {
 }
 
 /* ============================================================
-   АДАПТИВ
-   ============================================================ */
+АДАПТИВ
+============================================================ */
 @media (max-width: 900px) {
   .main-layout {
     grid-template-columns: 1fr;

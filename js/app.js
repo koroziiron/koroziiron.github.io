@@ -64,14 +64,12 @@ function showToast(text, type = '') {
 // ------------------------------------------------------------
 async function init() {
   showScreen('loading');
-
   // Проверяем доступность сервера
   const ok = await ping();
   if (!ok) {
     showScreen('offline');
     return;
   }
-
   // Проверяем сохранённую сессию
   const savedMember = localStorage.getItem('kp_member');
   if (savedMember) {
@@ -83,7 +81,6 @@ async function init() {
       localStorage.removeItem('kp_member');
     }
   }
-
   showScreen('login');
 }
 
@@ -94,14 +91,11 @@ $('login-form').addEventListener('submit', async e => {
   e.preventDefault();
   const input = $('login-key');
   const key = input.value.trim();
-
   if (!key) {
     shakeElement($('login-form'));
     return;
   }
-
   const result = await login(key);
-
   if (result.error === 'server') {
     showScreen('offline');
     return;
@@ -112,7 +106,6 @@ $('login-form').addEventListener('submit', async e => {
     input.focus();
     return;
   }
-
   // Успех
   state.member = result.member;
   localStorage.setItem('kp_member', JSON.stringify(state.member));
@@ -133,13 +126,11 @@ function shakeElement(el, red = false) {
 async function enterMain() {
   $('header-nickname').textContent = state.member.nickname;
   showScreen('main');
-
   // Загружаем классы (один раз)
   if (state.classes.length === 0) {
     const r = await getClasses();
     if (r.classes) state.classes = r.classes;
   }
-
   // Загружаем персонажей
   await loadCharacters();
   renderCharacters();
@@ -188,17 +179,14 @@ function resetDraft() {
 function renderCharacters() {
   const list = $('characters-list');
   list.innerHTML = '';
-
   // Существующие персонажи
   for (const ch of state.characters) {
     list.appendChild(buildCharCard(ch, false));
   }
-
   // Локально созданные (ещё не в БД)
   for (const ch of state.draft.inserted) {
     list.appendChild(buildCharCard(ch, true));
   }
-
   // Кнопка "+" в режиме редактирования
   const addBtn = $('add-character-btn');
   if (state.editMode) {
@@ -206,7 +194,6 @@ function renderCharacters() {
   } else {
     addBtn.classList.add('hidden');
   }
-
   // Класс на панели
   const panel = document.querySelector('.characters-panel');
   panel.classList.toggle('edit-mode', state.editMode);
@@ -219,15 +206,21 @@ function buildCharCard(ch, isNew) {
   const card = document.createElement('div');
   card.className = 'char-card';
   card.dataset.charId = ch.id;
-
+  
   // Помечен на удаление?
   if (state.draft.deleted.has(ch.id)) {
     card.classList.add('marked-delete');
   }
-
+  
   // Иконка
   const iconWrap = document.createElement('div');
   iconWrap.className = 'char-icon-wrap';
+  
+  // ПРАВКА 1: Блик для hover-эффекта
+  const shine = document.createElement('span');
+  shine.className = 'shine';
+  iconWrap.appendChild(shine);
+  
   const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   iconSvg.setAttribute('class', 'char-icon');
   const iconId = ch.classes?.icon_id || ch.icon_id || 'berserker';
@@ -237,7 +230,7 @@ function buildCharCard(ch, isNew) {
   use.setAttribute('href', '#' + iconId);
   iconSvg.appendChild(use);
   iconWrap.appendChild(iconSvg);
-
+  
   // В режиме редактирования — клик удаления/восстановления
   if (state.editMode) {
     iconWrap.addEventListener('click', e => {
@@ -245,20 +238,18 @@ function buildCharCard(ch, isNew) {
       toggleDelete(ch.id);
     });
   }
-
+  
   // Информация
   const info = document.createElement('div');
   info.className = 'char-info';
-
   const nameEl = document.createElement('div');
   nameEl.className = 'char-name';
   nameEl.textContent = ch.name;
-
+  
   const stats = document.createElement('div');
   stats.className = 'char-stats';
-
   const role = ch.classes?.role || ch.role || 'DPS';
-
+  
   // GS
   const gsWrap = document.createElement('span');
   if (state.editMode && !state.draft.deleted.has(ch.id)) {
@@ -286,7 +277,7 @@ function buildCharCard(ch, isNew) {
     gsWrap.className = getGsClass(ch.item_level);
     gsWrap.textContent = ch.item_level;
   }
-
+  
   // BS
   const bsWrap = document.createElement('span');
   if (state.editMode && !state.draft.deleted.has(ch.id)) {
@@ -313,16 +304,14 @@ function buildCharCard(ch, isNew) {
     bsWrap.className = role === 'SUPPORT' ? 'bs-support' : 'bs-dps';
     bsWrap.textContent = ch.combat_power;
   }
-
+  
   stats.appendChild(gsWrap);
   stats.appendChild(bsWrap);
-
   info.appendChild(nameEl);
   info.appendChild(stats);
-
+  
   card.appendChild(iconWrap);
   card.appendChild(info);
-
   return card;
 }
 
@@ -364,7 +353,6 @@ function toggleDelete(charId) {
     renderCharacters();
     return;
   }
-
   // Иначе — переключаем в deleted
   if (state.draft.deleted.has(charId)) {
     state.draft.deleted.delete(charId);
@@ -409,7 +397,7 @@ $('save-btn').addEventListener('click', async () => {
   }));
   const updated = Object.values(state.draft.updated);
   const deleted = Array.from(state.draft.deleted);
-
+  
   if (inserted.length === 0 && updated.length === 0 && deleted.length === 0) {
     // Ничего не изменилось — просто выходим
     state.editMode = false;
@@ -420,15 +408,14 @@ $('save-btn').addEventListener('click', async () => {
     renderCharacters();
     return;
   }
-
+  
   const r = await saveChanges(state.member.id, { inserted, updated, deleted });
-
   if (r.error) {
     showToast('Ошибка сохранения', 'error');
     console.error(r.error);
     return;
   }
-
+  
   showToast('Сохранено', 'success');
   state.editMode = false;
   resetDraft();
@@ -474,35 +461,32 @@ function closeClassModal() {
 function renderClassGrid() {
   const grid = $('class-grid');
   grid.innerHTML = '';
-
   // Группируем: для классов с двумя ролями (Паладин DPS/SUPPORT) — обе в списке
   for (const cls of state.classes) {
     const opt = document.createElement('div');
     opt.className = 'class-option ' + (cls.role === 'SUPPORT' ? 'support' : 'dps');
-
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', 'class-icon');
     svg.setAttribute('viewBox', getIconViewBox(cls.icon_id));
     const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    use.setAttribute('href', '#' + cls.icon_id);   // ← было '#icon-' + cls.icon_id
+    use.setAttribute('href', '#' + cls.icon_id);
     svg.appendChild(use);
-
+    
     const label = document.createElement('div');
     label.className = 'class-option-label';
     // Для классов с двумя ролями — добавляем пометку
     const hasBothRoles = state.classes.filter(c => c.name === cls.name).length > 1;
     label.textContent = hasBothRoles ? `${cls.name}` : cls.name;
-
+    
     const roleTag = document.createElement('div');
     roleTag.className = 'class-option-role ' + (cls.role === 'SUPPORT' ? 'support' : 'dps');
     roleTag.textContent = cls.role;
-
+    
     opt.appendChild(svg);
     opt.appendChild(label);
     if (hasBothRoles) opt.appendChild(roleTag);
-
+    
     opt.addEventListener('click', () => selectClass(cls));
-
     grid.appendChild(opt);
   }
 }
@@ -525,12 +509,10 @@ function selectClass(cls) {
 // ------------------------------------------------------------
 function createCharacter() {
   const name = $('new-char-name').value.trim();
-
   if (!name) {
     shakeElement($('new-char-name'), true);
     return;
   }
-
   // Проверка дубликата в БД
   if (state.characters.some(c => c.name === name)) {
     showNameError('Имя уже зарегистрировано');
@@ -541,7 +523,7 @@ function createCharacter() {
     showNameError('Имя уже зарегистрировано');
     return;
   }
-
+  
   state.tempIdCounter++;
   state.draft.inserted.push({
     id: 'temp_' + state.tempIdCounter,
@@ -558,7 +540,7 @@ function createCharacter() {
     item_level: 0,
     combat_power: 0,
   });
-
+  
   closeClassModal();
   renderCharacters();
   showToast('Персонаж добавлен (не забудьте сохранить)', 'success');
