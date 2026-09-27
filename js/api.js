@@ -150,44 +150,59 @@ export async function ping() {
 // ------------------------------------------------------------
 // Получить все рейды в диапазоне дат (с записями и классами персонажей)
 // ------------------------------------------------------------
+const RAID_SELECT = `
+  id,
+  datetime,
+  max_players,
+  status,
+  created_by,
+  raid_type_id,
+  raid_types (
+    id,
+    name,
+    mode,
+    size,
+    required_ilvl,
+    icon_id
+  ),
+  signups (
+    id,
+    character_id,
+    member_id,
+    role,
+    characters (
+      id,
+      name,
+      item_level,
+      combat_power,
+      class_id,
+      classes (
+        id,
+        name,
+        role,
+        icon_id
+      )
+    )
+  )
+`;
+
+// Все существующие рейды. Расписание — это общая доска, поэтому не ограничиваем
+// её текущей неделей. Границы недели используются только для игровых ограничений.
+export async function getAllRaids() {
+  const { data, error } = await supabase
+    .from('raids')
+    .select(RAID_SELECT)
+    .order('datetime', { ascending: true });
+
+  if (error) return { error };
+  return { raids: data };
+}
+
+// Оставляем диапазонный запрос для других сценариев/совместимости.
 export async function getRaidsInRange(startIso, endIso) {
   const { data, error } = await supabase
     .from('raids')
-    .select(`
-      id,
-      datetime,
-      max_players,
-      status,
-      created_by,
-      raid_type_id,
-      raid_types (
-        id,
-        name,
-        mode,
-        size,
-        required_ilvl,
-        icon_id
-      ),
-      signups (
-        id,
-        character_id,
-        member_id,
-        role,
-        characters (
-          id,
-          name,
-          item_level,
-          combat_power,
-          class_id,
-          classes (
-            id,
-            name,
-            role,
-            icon_id
-          )
-        )
-      )
-    `)
+    .select(RAID_SELECT)
     .gte('datetime', startIso)
     .lt('datetime', endIso)
     .order('datetime', { ascending: true });

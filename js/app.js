@@ -7,7 +7,7 @@ import {
   getClasses,
   saveChanges,
   ping,
-  getRaidsInRange,
+  getAllRaids,
   createRaid,
   deleteRaid,
   signup,
@@ -32,7 +32,7 @@ const state = {
   tempIdCounter: 0,
 
   // НОВОЕ:
-  raids: [],              // рейды текущей недели
+  raids: [],              // все существующие рейды
   raidTypes: [],          // справочник рейдов из БД
   weekStart: null,        // Date начала недели (среда 6:00 МСК)
   weekEnd: null,          // Date конца недели
@@ -227,19 +227,6 @@ function buildCharCard(ch, isNew) {
   const card = document.createElement('div');
   card.className = 'char-card';
   card.dataset.charId = ch.id;
-card.draggable = true;  // ← НОВОЕ
-
-  // НОВОЕ: drag
-  card.addEventListener('dragstart', e => {
-    state.draggingCharacter = ch;
-    e.dataTransfer.setData('text/character-id', ch.id);
-    e.dataTransfer.effectAllowed = 'move';
-    card.classList.add('dragging');
-  });
-  card.addEventListener('dragend', () => {
-    state.draggingCharacter = null;
-    card.classList.remove('dragging');
-  });
   
   // Помечен на удаление?
   if (state.draft.deleted.has(ch.id)) {
@@ -653,11 +640,12 @@ function getWeekBounds(date = new Date()) {
 }
 
 async function loadRaids() {
+  // Загружаем всю доску. Границы недели используются только для правил записи.
   const { start, end } = getWeekBounds();
   state.weekStart = start;
   state.weekEnd = end;
 
-  const r = await getRaidsInRange(start.toISOString(), end.toISOString());
+  const r = await getAllRaids();
   if (r.error) {
     console.error('getRaidsInRange:', r.error);
     showToast('Не удалось загрузить рейды', 'error');
@@ -708,26 +696,23 @@ function renderSchedule() {
   destroyRaidSortables();
   container.innerHTML = '';
 
-  if (state.raids.length === 0) {
-    container.innerHTML = '<div class="schedule-empty">На эту неделю рейды не запланированы</div>';
+  if (!state.raids.length) {
+    container.innerHTML = '<div class="schedule-empty">Рейды ещё не созданы</div>';
     return;
   }
 
-  // День = колонка. Пустые дни вообще не создаём.
+  // Каждая дата, на которую существует хотя бы один рейд, становится колонкой.
+  // Пустые даты вообще не рисуем.
   const byDay = new Map();
   for (const raid of state.raids) {
-    const key = getMskDateKey(new Date(raid.datetime));
+    const dt = new Date(raid.datetime);
+    if (Number.isNaN(dt.getTime())) continue;
+    const key = getMskDateKey(dt);
     if (!byDay.has(key)) byDay.set(key, []);
     byDay.get(key).push(raid);
   }
 
   const days = [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-
-  // Вертикальный масштаб: 1 час = 100px. Карточки остаются отдельными «стикерами».
-  const PX_PER_MINUTE = 100 / 60;
-  const CARD_GAP = 10;
-  const DAY_TOP = 48;
-
   const board = document.createElement('div');
   board.className = 'schedule-board';
 
@@ -739,42 +724,53 @@ function renderSchedule() {
 
     const dayHeader = document.createElement('div');
     dayHeader.className = 'schedule-day-header';
-    dayHeader.textContent = formatDayLabel(new Date(raids[0].datetime));
+    const headerDate = document.createElement('span');
+    headerDate.textContent = formatDayLabel(new Date(raids[0].datetime));
+    dayHeader.appendChild(headerDate);
+    const headerCount = document.createElement('span');
+    headerCount.className = 'schedule-day-count';
+    headerCount.textContent = `${raids.length} ${raidWord(raids.length)}`;
+    dayHeader.appendChild(headerCount);
     column.appendChild(dayHeader);
 
     const track = document.createElement('div');
     track.className = 'schedule-day-track';
 
-    // Не рисуем пустую область до первого рейда. Время между рейдами сохраняется.
-    let cursorBottom = 0;
+    let previousMinutes = null;
     for (const raid of raids) {
       const dt = new Date(raid.datetime);
       const msk = getMskParts(dt);
       const minutes = msk.hour * 60 + msk.minute;
-      const firstMsk = getMskParts(new Date(raids[0].datetime));
-      const firstMinutes = firstMsk.hour * 60 + firstMsk.minute;
-      const naturalTop = (minutes - firstMinutes) * PX_PER_MINUTE;
-      const top = Math.max(naturalTop, cursorBottom);
-
       const card = buildRaidCard(raid);
-      card.style.top = `${top}px`;
+
+      // Время влияет на расстояние между карточками, но пустота сжимается.
+      // Поэтому рейды в 18:00 и 18:30 будут рядом, а 18:00 и 22:00 — заметно дальше,
+      // но без четырёх пустых часов высотой в экран.
+      if (previousMinutes !== null) {
+        let delta = minutes - previousMinutes;
+        if (delta < 0) delta += 24 * 60;
+        const gap = Math.min(84, Math.max(12, delta * 1.25));
+        card.style.marginTop = `${gap}px`;
+      }
+
       track.appendChild(card);
-
-      // Реальная высота карточки станет известна после добавления в DOM.
-      // Берём минимальную оценку, чтобы близкие рейды не накладывались.
-      cursorBottom = top + 118 + CARD_GAP;
+      previousMinutes = minutes;
     }
-
-    // Добавляем немного воздуха снизу, но не создаём часовую сетку.
-    const last = track.lastElementChild;
-    const trackHeight = last ? last.offsetTop + last.offsetHeight + 18 : 80;
-    track.style.minHeight = `${Math.max(trackHeight, 90)}px`;
 
     column.appendChild(track);
     board.appendChild(column);
   }
 
   container.appendChild(board);
+}
+
+function raidWord(count) {
+  const n = Math.abs(count) % 100;
+  const n1 = n % 10;
+  if (n >= 11 && n <= 19) return 'рейдов';
+  if (n1 === 1) return 'рейд';
+  if (n1 >= 2 && n1 <= 4) return 'рейда';
+  return 'рейдов';
 }
 
 function buildRaidCard(raid) {
@@ -908,6 +904,10 @@ function validateSignup(raid, character) {
     return 'Рейд заполнен';
   }
 
+  if (new Date(raid.datetime).getTime() <= Date.now()) {
+    return 'Нельзя записаться на уже прошедший рейд';
+  }
+
   // Ограничение ГС.
   if (characterIlvl < requiredIlvl) {
     return `Нужен ГС ${requiredIlvl}, у ${character.name} — ${character.item_level}`;
@@ -919,15 +919,22 @@ function validateSignup(raid, character) {
     return 'Ты уже записан на этот рейд другим персонажем';
   }
 
-  // Один и тот же персонаж не может ходить на один и тот же boss name дважды в неделю.
+  // Один и тот же персонаж не может ходить на один и тот же boss name
+  // дважды в одну игровую неделю. Для будущих рейдов считаем неделю относительно
+  // даты самого рейда, а не относительно сегодняшнего дня.
   const bossName = String(rt.name || '').trim().toLowerCase();
+  const targetWeek = getWeekBounds(new Date(raid.datetime));
   const sameCharOnSameBoss = state.raids.some(r => {
+    if (r.id === raid.id) return false;
     const otherName = String(r.raid_types?.name || '').trim().toLowerCase();
-    return otherName === bossName && (r.signups || []).some(s => s.character_id === character.id);
+    if (otherName !== bossName) return false;
+    const otherWeek = getWeekBounds(new Date(r.datetime));
+    const sameWeek = otherWeek.start.getTime() === targetWeek.start.getTime();
+    return sameWeek && (r.signups || []).some(s => s.character_id === character.id);
   });
 
   if (sameCharOnSameBoss) {
-    return `${character.name} уже записан на ${rt.name} на этой неделе`;
+    return `${character.name} уже записан на ${rt.name} в эту неделю`;
   }
 
   return null;
@@ -972,10 +979,14 @@ function setupCharacterDrag() {
     touchStartThreshold: 6,
     onStart: evt => {
       const id = evt.item?.dataset?.charId;
-      state.draggingCharacter = state.characters.find(c => c.id === id) || null;
+      state.draggingCharacter = state.characters.find(c => c.id === id)
+        || state.draft.inserted.find(c => c.id === id)
+        || null;
     },
-    onEnd: () => {
+    onEnd: evt => {
       state.draggingCharacter = null;
+      evt.item?.classList.remove('dragging', 'sortable-chosen', 'sortable-ghost');
+      document.querySelectorAll('.char-card.dragging').forEach(el => el.classList.remove('dragging'));
     },
   });
 }
@@ -1086,7 +1097,14 @@ function selectRaidType(name) {
 
   const grid = $('raid-mode-grid');
   grid.innerHTML = '';
-  const modes = state.raidTypes.filter(rt => rt.name === name);
+  const modeOrder = { normal: 0, hard: 1, nightmare: 2 };
+  const modes = state.raidTypes
+    .filter(rt => rt.name === name)
+    .sort((a, b) => {
+      const aa = modeOrder[String(a.mode || '').trim().toLowerCase()] ?? 99;
+      const bb = modeOrder[String(b.mode || '').trim().toLowerCase()] ?? 99;
+      return aa - bb;
+    });
 
   for (const rt of modes) {
     const opt = document.createElement('button');
