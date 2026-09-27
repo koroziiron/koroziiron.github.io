@@ -139,35 +139,37 @@ function shakeElement(el, red = false) {
 async function enterMain() {
   $('header-nickname').textContent = state.member.nickname;
   showScreen('main');
-  // Загружаем классы (один раз)
-  if (state.classes.length === 0) {
-    const r = await getClasses();
-    if (r.classes) state.classes = r.classes;
-  }
-  // Загружаем персонажей
-  await loadCharacters();
-  renderCharacters();
-}
 
-async function enterMain() {
-  $('header-nickname').textContent = state.member.nickname;
-  showScreen('main');
+  console.log('1. enterMain');
 
   if (state.classes.length === 0) {
+    console.log('2. getClasses');
     const r = await getClasses();
+    console.log('3. getClasses result', r);
     if (r.classes) state.classes = r.classes;
   }
+
+  console.log('4. getRaidTypes');
 
   if (state.raidTypes.length === 0) {
     const r = await getRaidTypes();
+    console.log('5. getRaidTypes result', r);
     if (r.raidTypes) state.raidTypes = r.raidTypes;
   }
 
+  console.log('6. loadCharacters');
   await loadCharacters();
+
+  console.log('7. loadRaids');
   await loadRaids();
+
+  console.log('8. render');
   renderCharacters();
   renderSchedule();
+
+  console.log('9. DONE');
 }
+
 
 // ------------------------------------------------------------
 // ВЫХОД
