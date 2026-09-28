@@ -206,6 +206,10 @@ function compareBySortOrder(a, b) {
   const va = Number.isFinite(sa) && sa !== 0 ? sa : Infinity;
   const vb = Number.isFinite(sb) && sb !== 0 ? sb : Infinity;
   if (va !== vb) return va - vb;
+  // стабильный тай-брейк: сначала по имени, затем по ГС —
+  // так список и табличка всегда совпадают даже при равных sort_order
+  const na = String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+  if (na !== 0) return na;
   return (Number(b.item_level) || 0) - (Number(a.item_level) || 0);
 }
 
@@ -1076,6 +1080,14 @@ async function loadRaidBoard() {
   for (const r of state.raids) for (const s of r.signups || []) if (s.member_id === state.member.id && s.week_start === weekStartDate()) signedChars.add(s.character_id + '|' + (r.raid_types?.name));
 
   const chars = sortedCharacters(); // тот же порядок, что и в списке «Мои персонажи»
+  // Фиксируем фактический порядок строк в sort_order (в памяти — сразу, в БД — в фоне),
+  // иначе список (сортировка по sort_order) и табличка (порядок DOM после перетаскиваний) разъезжаются
+  for (let i = 0; i < chars.length; i++) {
+    if (Number(chars[i].sort_order) !== i + 1) {
+      chars[i].sort_order = i + 1;
+      dragonsSupabase.from('characters').update({ sort_order: i + 1 }).eq('id', chars[i].id).then(() => {});
+    }
+  }
   for (const ch of chars) {
     const tr = document.createElement('tr');
     tr.draggable = true;
@@ -1134,20 +1146,34 @@ async function loadRaidBoard() {
     tr.addEventListener('dragover', e => e.preventDefault());
     tr.addEventListener('drop', async e => {
       e.preventDefault();
+      // Тащим карточку из списка «Мои персонажи»? (другой MIME, чем у строк таблички)
+      const fromList = e.dataTransfer.getData('text/character-id');
+      if (fromList) return; // перестановка списком здесь не нужна — игнорируем
       const moving = e.dataTransfer.getData('text/dragon-character');
-      if (!moving || moving === ch.id) return;
+      if (!moving || String(moving) === String(ch.id)) return;
       const order = [...body.querySelectorAll('tr[data-id]')].map(x => x.dataset.id);
-      const a = order.indexOf(moving), z = order.indexOf(ch.id);
+      const a = order.indexOf(String(moving)), z = order.indexOf(String(ch.id));
+      if (a < 0 || z < 0) return;
       order.splice(z, 0, order.splice(a, 1)[0]);
+      // Применяем новый порядок сразу и локально, НЕ дожидаясь ответа БД —
+      // иначе при медленном/ошибочном запросе список оставался бы в старом порядке
+      const applyOrder = () => {
+        // Порядок меняем прямо в DOM — без пересоздания строк
+        for (const id of order) body.appendChild(body.querySelector('tr[data-id="' + id + '"]'));
+        // sort_order в памяти ставим по новому порядку (i+1), чтобы sortedCharacters()
+        // совпал с табличкой мгновенно — не полагаемся на то, что БД вернёт эти же значения
+        for (let i = 0; i < order.length; i++) {
+          const c = state.characters.find(x => String(x.id) === order[i]);
+          if (c) c.sort_order = i + 1;
+        }
+        // Список «Мои персонажи» рисуем в том же порядке, что и табличка рейдов
+        renderCharacters();
+      };
+      applyOrder();
       for (let i = 0; i < order.length; i++) {
         const { error } = await dragonsSupabase.from('characters').update({ sort_order: i + 1 }).eq('id', order[i]);
-        if (error) { showToast('Не удалось сохранить порядок', 'error'); return; }
+        if (error) { showToast('Не удалось сохранить порядок', 'error'); break; }
       }
-      state.characters.sort((x, y) => order.indexOf(String(x.id)) - order.indexOf(String(y.id)));
-      // Порядок меняем прямо в DOM — без пересоздания строк
-      for (const id of order) body.appendChild(body.querySelector('tr[data-id="' + id + '"]'));
-      // Список «Мои персонажи» рисуем в том же порядке, что и табличка рейдов
-      if (!state.editMode) renderCharacters();
     });
     body.appendChild(tr);
   }

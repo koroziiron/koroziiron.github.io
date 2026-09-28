@@ -101,13 +101,13 @@ export async function saveChanges(memberId, { inserted, updated, deleted }) {
 
   // 2. Обновление
   for (const ch of updated) {
+    const patch = { updated_at: new Date().toISOString() };
+    if ('item_level' in ch) patch.item_level = ch.item_level;
+    if ('combat_power' in ch) patch.combat_power = ch.combat_power;
+    if ('sort_order' in ch) patch.sort_order = ch.sort_order;
     const { error } = await supabase
       .from('characters')
-      .update({
-        item_level: ch.item_level,
-        combat_power: ch.combat_power,
-        updated_at: new Date().toISOString(),
-      })
+      .update(patch)
       .eq('id', ch.id);
     if (error) errors.push({ op: 'update', id: ch.id, error });
   }
@@ -120,6 +120,7 @@ export async function saveChanges(memberId, { inserted, updated, deleted }) {
       class_id: ch.class_id,
       item_level: ch.item_level,
       combat_power: ch.combat_power,
+      sort_order: ch.sort_order ?? null,
     }));
 
     const { error } = await supabase
