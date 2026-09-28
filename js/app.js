@@ -13,7 +13,9 @@ import {
   signup,
   unsign,
   getRaidTypes,
+  supabase as dragonsSupabase,
 } from './api.js';
+window.dragonsSupabase = dragonsSupabase;
 
 // ------------------------------------------------------------
 // ГЛОБАЛЬНОЕ СОСТОЯНИЕ
@@ -140,36 +142,21 @@ async function enterMain() {
   $('header-nickname').textContent = state.member.nickname;
   showScreen('main');
 
-  console.log('1. enterMain');
-
   if (state.classes.length === 0) {
-    console.log('2. getClasses');
     const r = await getClasses();
-    console.log('3. getClasses result', r);
     if (r.classes) state.classes = r.classes;
   }
 
-  console.log('4. getRaidTypes');
-
   if (state.raidTypes.length === 0) {
     const r = await getRaidTypes();
-    console.log('5. getRaidTypes result', r);
     if (r.raidTypes) state.raidTypes = r.raidTypes;
   }
 
-  console.log('6. loadCharacters');
   await loadCharacters();
-
-  console.log('7. loadRaids');
   await loadRaids();
-
-  console.log('8. render');
   renderCharacters();
   renderSchedule();
-
-  console.log('9. DONE');
 }
-
 
 // ------------------------------------------------------------
 // ВЫХОД
@@ -645,15 +632,8 @@ function getWeekBounds(date = new Date()) {
 }
 
 async function loadRaids() {
-  const { start, end } = getWeekBounds();
-  state.weekStart = start;
-  state.weekEnd = end;
-
-  const r = await getRaidsInRange(start.toISOString(), end.toISOString());
-  if (r.error) {
-    showToast('Не удалось загрузить рейды', 'error');
-    return;
-  }
+  const r = await getRaidsInRange();
+  if (r.error) { showToast('Не удалось загрузить рейды', 'error'); return; }
   state.raids = r.raids || [];
 }
 
@@ -661,79 +641,11 @@ async function loadRaids() {
 // РЕНДЕР РАСПИСАНИЯ
 // ------------------------------------------------------------
 function renderSchedule() {
-  const container = document.getElementById('schedule-timeline');
-  if (!container) return;
-
-  container.innerHTML = '';
-
-  if (state.raids.length === 0) {
-    container.innerHTML = '<div class="schedule-empty">На эту неделю рейды не запланированы</div>';
-    return;
-  }
-
-  // Группируем рейды по дням
-  const byDay = {};
-  let minHour = 24, maxHour = 0;
-
-  for (const raid of state.raids) {
-    const dt = new Date(raid.datetime);
-    const dayKey = dt.toDateString();
-    if (!byDay[dayKey]) byDay[dayKey] = { date: dt, raids: [] };
-    byDay[dayKey].raids.push(raid);
-
-    const h = dt.getHours();
-    if (h < minHour) minHour = h;
-    if (h > maxHour) maxHour = h;
-  }
-
-  // Сортируем дни по дате
-  const days = Object.values(byDay).sort((a, b) => a.date - b.date);
-
-  // Сетка: слева ось времени, справа дни
-  const leftAxis = document.createElement('div');
-  leftAxis.className = 'schedule-axis';
-  for (let h = minHour; h <= maxHour; h++) {
-    const tick = document.createElement('div');
-    tick.className = 'schedule-axis-tick';
-    tick.textContent = `${String(h).padStart(2, '0')}:00`;
-    leftAxis.appendChild(tick);
-  }
-
-  const grid = document.createElement('div');
-  grid.className = 'schedule-grid';
-
-  const HOUR_WIDTH = 80;
-  const DAY_HEIGHT = 120;
-
-  for (const day of days) {
-    const dayCol = document.createElement('div');
-    dayCol.className = 'schedule-day';
-    dayCol.style.height = `${DAY_HEIGHT}px`;
-
-    const dayLabel = document.createElement('div');
-    dayLabel.className = 'schedule-day-label';
-    dayLabel.textContent = formatDayLabel(day.date);
-    dayCol.appendChild(dayLabel);
-
-    // Внутри дня — контейнер для карточек
-    const slots = document.createElement('div');
-    slots.className = 'schedule-slots';
-    slots.style.width = `${(maxHour - minHour + 2) * HOUR_WIDTH}px`;
-
-    for (const raid of day.raids) {
-      const dt = new Date(raid.datetime);
-      const offsetX = ((dt.getHours() - minHour) + dt.getMinutes() / 60) * HOUR_WIDTH;
-      const card = buildRaidCard(raid);
-      card.style.left = `${offsetX}px`;
-      slots.appendChild(card);
-    }
-
-    dayCol.appendChild(slots);
-    grid.appendChild(dayCol);
-  }
-
-  container.appendChild(leftAxis);
-  container.appendChild(grid);
+ const root=$('schedule-timeline'); if(!root)return; root.innerHTML='';
+ const days=[{v:3,n:'Среда'},{v:4,n:'Четверг'},{v:5,n:'Пятница'},{v:6,n:'Суббота'},{v:7,n:'Воскресенье'},{v:1,n:'Понедельник'},{v:2,n:'Вторник'}];
+ const used=days.map(d=>({...d,raids:state.raids.filter(r=>Number(r.weekday)===d.v).sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||''))})).filter(d=>d.raids.length);
+ if(!used.length){root.innerHTML='<div class="schedule-empty">Расписание пока пустое. Создай первый рейд.</div>';return;}
+ for(const d of used){const col=document.createElement('section');col.className='weekday-column';const h=document.createElement('h3');h.className='weekday-title';h.textContent=d.n;col.appendChild(h);for(const raid of d.raids){const card=buildRaidCard(raid);card.style.position='relative';card.style.left='auto';const t=document.createElement('div');t.className='weekday-time';t.textContent=(raid.start_time||'20:00').slice(0,5)+' МСК';card.insertBefore(t,card.firstChild);col.appendChild(card);}root.appendChild(col);}
 }
 
 function formatDayLabel(date) {
@@ -748,7 +660,8 @@ function buildRaidCard(raid) {
   card.dataset.raidId = raid.id;
 
   const rt = raid.raid_types;
-  const signed = raid.signups?.length || 0;
+  const weekSignups = (raid.signups || []).filter(s => s.week_start === weekStartDate());
+  const signed = weekSignups.length;
   const max = raid.max_players;
   const isFull = signed >= max;
 
@@ -798,7 +711,7 @@ function buildRaidCard(raid) {
   const list = document.createElement('div');
   list.className = 'raid-card-signups';
 
-  for (const s of (raid.signups || [])) {
+  for (const s of weekSignups) {
     const row = document.createElement('div');
     row.className = 'raid-signup-row';
     if (s.member_id === state.member.id) row.classList.add('mine');
@@ -817,11 +730,10 @@ function buildRaidCard(raid) {
     name.textContent = s.characters?.name || '???';
     row.appendChild(name);
 
-    const bs = document.createElement('span');
-    bs.className = 'raid-signup-ilvl ' + getGsClass(s.characters?.item_level);
-    bs.title = 'Боевая сила';
-    bs.textContent = s.characters?.combat_power ?? 0;
-    row.appendChild(bs);
+    const ilvl = document.createElement('span');
+    ilvl.className = 'raid-signup-ilvl ' + getGsClass(s.characters?.item_level);
+    ilvl.textContent = s.characters?.combat_power ?? 0; ilvl.title = 'Боевая сила';
+    row.appendChild(ilvl);
 
     // Кнопка удаления записи (свои или админ)
     if (s.member_id === state.member.id || state.member.nickname === 'korozii') {
@@ -853,7 +765,7 @@ function buildRaidCard(raid) {
     if (state.member.nickname === 'korozii') return true;
     if (raid.created_by === state.member.id) {
       // Только если на рейде нет других записей кроме создателя
-      const otherSignups = (raid.signups || []).filter(s => s.member_id !== raid.created_by);
+      const otherSignups = (raid.signups || []).filter(s => s.week_start === weekStartDate() && s.member_id !== raid.created_by);
       return otherSignups.length === 0;
     }
     return false;
@@ -891,6 +803,8 @@ function buildRaidCard(raid) {
       character_id: character.id,
       member_id: state.member.id,
       role: character.classes?.role || 'DPS',
+      week_start: weekStartDate(),
+      raid_key: raid.raid_types.name,
     });
 
     if (r.error) {
@@ -910,7 +824,8 @@ function buildRaidCard(raid) {
 // Валидация записи
 function validateSignup(raid, character) {
   const rt = raid.raid_types;
-  const signed = raid.signups?.length || 0;
+  const weekSignups = (raid.signups || []).filter(s => s.week_start === weekStartDate());
+  const signed = weekSignups.length;
 
   // ГС
   if (parseFloat(character.item_level) < parseFloat(rt.required_ilvl)) {
@@ -923,7 +838,7 @@ function validateSignup(raid, character) {
   }
 
   // Тот же игрок уже на этом рейде (через любого персонажа)
-  const sameMember = (raid.signups || []).some(s => s.member_id === state.member.id);
+  const sameMember = (raid.signups || []).some(s => s.week_start === weekStartDate() && s.member_id === state.member.id);
   if (sameMember) {
     return 'Ты уже записан на этот рейд другим персонажем';
   }
@@ -931,7 +846,7 @@ function validateSignup(raid, character) {
   // Тот же персонаж уже на рейде с таким же name в текущей неделе
   const sameCharOnSameBoss = state.raids.some(r => {
     if (r.raid_types.name !== rt.name) return false;
-    return (r.signups || []).some(s => s.character_id === character.id);
+    return (r.signups || []).some(s => s.week_start === weekStartDate() && s.character_id === character.id);
   });
   if (sameCharOnSameBoss) {
     return `${character.name} уже записан на ${rt.name} на этой неделе`;
@@ -941,18 +856,8 @@ function validateSignup(raid, character) {
 }
 
 $('add-raid-btn').addEventListener('click', openRaidModal);
-$('modal-raid-close').addEventListener('click', closeRaidModal);
-$('modal-raid').addEventListener('click', e => {
-  if (e.target === $('modal-raid')) closeRaidModal();
-});
-
-function closeRaidModal() {
-  $('modal-raid').classList.remove('active');
-  $('raid-step-1').classList.add('active');
-  $('raid-step-2').classList.remove('active');
-  $('raid-step-3').classList.remove('active');
-  state.pendingRaidType = null;
-}
+$('modal-raid-close')?.addEventListener('click',closeRaidModal);
+function closeRaidModal(){ $('modal-raid').classList.remove('active'); $('raid-step-1').classList.add('active'); $('raid-step-2').classList.remove('active'); $('raid-step-3').classList.remove('active'); state.pendingRaidType=null; }
 
 function openRaidModal() {
   $('modal-raid').classList.add('active');
@@ -1011,90 +916,30 @@ function selectRaidMode(rt) {
   $('raid-mode-title').textContent = `${rt.name} — ${rt.mode}`;
   $('raid-required-ilvl').textContent = rt.required_ilvl;
 
-  // Даты формируем по локальному календарю устройства, не через UTC ISO.
-  const dateInput = $('raid-date-input');
-  const timeInput = $('raid-time-input');
-  const toDateValue = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  const today = new Date();
-  dateInput.min = toDateValue(today);
-  dateInput.value = toDateValue(today);
-  timeInput.value = '20:00';
-  renderRaidDateQuick();
-  renderRaidTimePresets();
-  updateRaidDatePreview();
+  $('raid-weekday-input').value = '3';
+  $('raid-time-input').value = '20:00';
 }
 
-function renderRaidDateQuick() {
-  const root = $('raid-date-quick');
-  if (!root) return;
-  root.innerHTML = '';
-  const base = new Date();
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(base); d.setDate(base.getDate() + i);
-    const value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'raid-date-chip';
-    b.innerHTML = `<span>${i===0?'Сегодня':i===1?'Завтра':new Intl.DateTimeFormat('ru-RU',{weekday:'short'}).format(d)}</span><strong>${d.getDate()} ${new Intl.DateTimeFormat('ru-RU',{month:'short'}).format(d)}</strong>`;
-    b.classList.toggle('selected', $('raid-date-input').value === value);
-    b.addEventListener('click', () => { $('raid-date-input').value = value; syncRaidDateChips(); updateRaidDatePreview(); });
-    root.appendChild(b);
-  }
-}
-function syncRaidDateChips() {
-  const value = $('raid-date-input').value;
-  document.querySelectorAll('.raid-date-chip').forEach(b => {
-    const i = [...b.parentElement.children].indexOf(b); const d = new Date(); d.setDate(d.getDate()+i);
-    const v = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    b.classList.toggle('selected', v === value);
-  });
-}
-function renderRaidTimePresets() {
-  const root = $('raid-time-presets'); if (!root) return; root.innerHTML = '';
-  for (const t of ['18:00','19:00','20:00','20:30','21:00','21:30','22:00']) {
-    const b = document.createElement('button'); b.type='button'; b.className='raid-time-chip'; b.textContent=t;
-    b.classList.toggle('selected', $('raid-time-input').value === t);
-    b.addEventListener('click', () => { $('raid-time-input').value=t; syncRaidTimeChips(); updateRaidDatePreview(); }); root.appendChild(b);
-  }
-}
-function syncRaidTimeChips() { document.querySelectorAll('.raid-time-chip').forEach(b => b.classList.toggle('selected', b.textContent === $('raid-time-input').value)); }
-function updateRaidDatePreview() {
-  const date = $('raid-date-input')?.value, time = $('raid-time-input')?.value, box = $('raid-datetime-preview');
-  if (!box || !date || !time) return;
-  const [y,m,d] = date.split('-').map(Number); const dt = new Date(y,m-1,d);
-  box.textContent = `${new Intl.DateTimeFormat('ru-RU',{weekday:'long',day:'numeric',month:'long'}).format(dt)} · ${time} МСК`;
-}
-$('raid-date-input').addEventListener('change', () => { syncRaidDateChips(); updateRaidDatePreview(); });
-$('raid-time-input').addEventListener('input', () => { syncRaidTimeChips(); updateRaidDatePreview(); });
-
-// Создать рейд
-$('raid-create-btn').addEventListener('click', async () => {
-  const date = $('raid-date-input').value;
-  const time = $('raid-time-input').value;
-
-  if (!date || !time) {
-    showToast('Выбери дату и время', 'error');
-    return;
-  }
-
-  const dt = new Date(`${date}T${time}:00`);
-
-  const r = await createRaid({
-    raid_type_id: state.pendingRaidType.id,
-    datetime: dt.toISOString(),
-    max_players: state.pendingRaidType.size,
-    created_by: state.member.id,
-  });
-
-  if (r.error) {
-    showToast('Не удалось создать рейд', 'error');
-    console.error(r.error);
-    return;
-  }
-
-  closeRaidModal();
-  showToast('Рейд создан', 'success');
-  await loadRaids();
-  renderSchedule();
+// Создать повторяющийся недельный слот
+$('raid-create-btn').addEventListener('click',async()=>{
+ const weekday=Number($('raid-weekday-input').value),start_time=$('raid-time-input').value;
+ if(!weekday||!start_time){showToast('Выбери день и время','error');return;}
+ const r=await createRaid({raid_type_id:state.pendingRaidType.id,weekday,start_time,max_players:state.pendingRaidType.size,created_by:state.member.id});
+ if(r.error){showToast('Не удалось создать слот','error');console.error(r.error);return;}
+ closeRaidModal();showToast('Слот добавлен','success');await loadRaids();renderSchedule();
 });
+
+
+function weekStartDate(){const n=new Date(new Date().toLocaleString('en-US',{timeZone:'Europe/Moscow'}));const back=(n.getDay()-3+7)%7+(n.getDay()===3&&n.getHours()<6?7:0);n.setDate(n.getDate()-back);n.setHours(6,0,0,0);return new Date(n.getTime()-10800000).toISOString().slice(0,10);}
+const BOARD_KEYS=['Арсенос','Серка','Казерос','Армог'];
+function setupTabs(){const nav=$('dragons-tabs');if(!nav)return;nav.querySelectorAll('[data-tab]').forEach(btn=>btn.addEventListener('click',()=>{nav.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===btn));$('schedule-view').classList.toggle('hidden',btn.dataset.tab!=='schedule');$('raids-view').classList.toggle('hidden',btn.dataset.tab!=='raids');if(btn.dataset.tab==='raids')loadRaidBoard();}));}
+function normalIlvl(key){const list=state.raidTypes.filter(x=>x.name===key);return Number((list.find(x=>/normal|обыч/i.test(x.mode))||list[0])?.required_ilvl||Infinity);}
+async function loadRaidBoard(){const body=$('raid-board-body');if(!body||!state.member)return;body.innerHTML='';const ids=state.characters.map(c=>c.id);let progress=[];if(ids.length){const q=await dragonsSupabase.from('character_raid_progress').select('character_id,raid_key,completed').in('character_id',ids);if(q.error){body.innerHTML='<tr><td colspan="6">Ошибка загрузки отметок. Проверь RLS таблицы прогресса.</td></tr>';return;}progress=q.data||[];}
+const done=new Map(progress.map(p=>[p.character_id+'|'+p.raid_key,p.completed]));const signed=new Set();for(const r of state.raids)for(const s of r.signups||[])if(s.member_id===state.member.id&&s.week_start===weekStartDate())signed.add(s.character_id+'|'+r.raid_types?.name);
+const chars=[...state.characters].sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));for(const ch of chars){const tr=document.createElement('tr');tr.draggable=true;tr.dataset.id=ch.id;const name=document.createElement('td');name.className='board-character';name.textContent=ch.name;tr.appendChild(name);const coinCell=document.createElement('td');const coin=document.createElement('button');coin.className='coin-toggle'+(ch.gold_coin_active===false?' muted':'');coin.textContent='◉';coin.title='Переключить золотую монетку';coin.onclick=async()=>{const v=ch.gold_coin_active===false;const {error}=await dragonsSupabase.from('characters').update({gold_coin_active:v}).eq('id',ch.id);if(error){showToast('Не удалось сохранить монетку','error');return;}ch.gold_coin_active=v;coin.classList.toggle('muted',!v);};coinCell.appendChild(coin);tr.appendChild(coinCell);let all=true;
+for(const key of BOARD_KEYS){const td=document.createElement('td');const can=Number(ch.item_level||0)>=normalIlvl(key),doneNow=done.get(ch.id+'|'+key)===true,isSigned=signed.has(ch.id+'|'+key);if(!doneNow)all=false;const btn=document.createElement('button');btn.className='progress-toggle '+(!can?'blocked':doneNow?'done':isSigned?'signed':'empty');btn.textContent=!can?'×':doneNow?'✓':isSigned?'−':'';btn.disabled=!can;btn.title=!can?'Недостаточный ГС':doneNow?'Снять отметку':'Отметить выполнение';btn.onclick=async()=>{const {error}=await dragonsSupabase.from('character_raid_progress').upsert({character_id:ch.id,raid_key:key,completed:!doneNow,updated_at:new Date().toISOString()},{onConflict:'character_id,raid_key'});if(error){showToast('Не удалось сохранить отметку','error');return;}loadRaidBoard();};td.appendChild(btn);tr.appendChild(td);}if(all)tr.classList.add('all-done');
+tr.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/dragon-character',ch.id);tr.classList.add('dragging');});tr.addEventListener('dragend',()=>tr.classList.remove('dragging'));tr.addEventListener('dragover',e=>e.preventDefault());tr.addEventListener('drop',async e=>{e.preventDefault();const moving=e.dataTransfer.getData('text/dragon-character');if(!moving||moving===ch.id)return;const order=[...body.querySelectorAll('tr[data-id]')].map(x=>x.dataset.id),a=order.indexOf(moving),z=order.indexOf(ch.id);order.splice(z,0,order.splice(a,1)[0]);for(let i=0;i<order.length;i++){const {error}=await dragonsSupabase.from('characters').update({sort_order:i+1}).eq('id',order[i]);if(error){showToast('Не удалось сохранить порядок','error');return;}}state.characters.sort((x,y)=>order.indexOf(x.id)-order.indexOf(y.id));loadRaidBoard();});body.appendChild(tr);}}
+setupTabs();
 
 // ------------------------------------------------------------
 // СТАРТ

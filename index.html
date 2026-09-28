@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>КП Drugs — Панель</title>
+<title>Dragons</title>
+<link rel="icon" type="image/png" href="assets/icon.png">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;500;600&family=Marcellus&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -180,6 +181,8 @@
   </header>
 
   <!-- ОСНОВНАЯ ОБЛАСТЬ -->
+  <nav class="dragons-tabs" id="dragons-tabs"><button class="active" data-tab="schedule">Расписание</button><button data-tab="raids">Рейды</button></nav>
+  <div id="schedule-view">
   <div class="main-layout">
 
     <!-- ЛЕВАЯ КОЛОНКА: РЕЙДЫ (заглушка) -->
@@ -309,17 +312,10 @@
     <div id="raid-step-3" class="modal-step">
       <h3 class="modal-title" id="raid-mode-title">—</h3>
       <p class="raid-ilvl-hint">Требуемый ГС: <span id="raid-required-ilvl">—</span></p>
-      <div class="raid-picker-section">
-        <div class="raid-picker-label">Дата</div>
-        <div id="raid-date-quick" class="raid-date-quick" aria-label="Быстрый выбор даты"></div>
-        <input type="date" id="raid-date-input" class="raid-date-input" aria-label="Другая дата">
+      <div class="raid-datetime-row">
+        <select id="raid-weekday-input" class="raid-date-input"><option value="3">Среда</option><option value="4">Четверг</option><option value="5">Пятница</option><option value="6">Суббота</option><option value="7">Воскресенье</option><option value="1">Понедельник</option><option value="2">Вторник</option></select>
+        <input type="time" id="raid-time-input" class="raid-time-input">
       </div>
-      <div class="raid-picker-section">
-        <div class="raid-picker-label">Время · МСК</div>
-        <div id="raid-time-presets" class="raid-time-presets"></div>
-        <input type="time" id="raid-time-input" class="raid-time-input" value="20:00" aria-label="Другое время">
-      </div>
-      <div id="raid-datetime-preview" class="raid-datetime-preview" aria-live="polite"></div>
       <button id="raid-create-btn" class="raid-create-btn">Создать рейд</button>
     </div>
   </div>
