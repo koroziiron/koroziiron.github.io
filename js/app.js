@@ -655,7 +655,7 @@ function renderSchedule() {
  const days=[{v:3,n:'Среда'},{v:4,n:'Четверг'},{v:5,n:'Пятница'},{v:6,n:'Суббота'},{v:7,n:'Воскресенье'},{v:1,n:'Понедельник'},{v:2,n:'Вторник'}];
  const used=days.map(d=>({...d,raids:state.raids.filter(r=>Number(r.weekday)===d.v).sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||''))})).filter(d=>d.raids.length);
  if(!used.length){root.innerHTML='<div class="schedule-empty">Расписание пока пустое. Создай первый рейд.</div>';return;}
- for(const d of used){const col=document.createElement('section');col.className='weekday-column';const h=document.createElement('h3');h.className='weekday-title';h.textContent=d.n;col.appendChild(h);for(const raid of d.raids){const card=buildRaidCard(raid);card.style.position='relative';card.style.left='auto';const t=document.createElement('div');t.className='weekday-time';t.textContent=(raid.start_time||'20:00').slice(0,5)+' МСК';card.insertBefore(t,card.firstChild);col.appendChild(card);}root.appendChild(col);}
+ for(const d of used){const col=document.createElement('section');col.className='weekday-column';const h=document.createElement('h3');h.className='weekday-title';h.textContent=d.n;col.appendChild(h);const body=document.createElement('div');body.className='weekday-cards';col.appendChild(body);for(const raid of d.raids){const card=buildRaidCard(raid);const t=document.createElement('div');t.className='weekday-time';t.textContent=(raid.start_time||'20:00').slice(0,5)+' МСК';card.insertBefore(t,card.firstChild);body.appendChild(card);}root.appendChild(col);}
 }
 
 function formatDayLabel(date) {
