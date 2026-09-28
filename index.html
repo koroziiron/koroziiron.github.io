@@ -3,8 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dragons</title>
-<link rel="icon" type="image/png" href="assets/icon.png">
+<title>КП Drugs — Панель</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;500;600&family=Marcellus&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -181,8 +180,6 @@
   </header>
 
   <!-- ОСНОВНАЯ ОБЛАСТЬ -->
-  <nav class="dragons-tabs" id="dragons-tabs"><button class="active" data-tab="schedule">Расписание</button><button data-tab="raids">Рейды</button></nav>
-  <div id="schedule-view">
   <div class="main-layout">
 
     <!-- ЛЕВАЯ КОЛОНКА: РЕЙДЫ (заглушка) -->
@@ -243,30 +240,7 @@
     </aside>
   </div>
 </div>
-<!-- ============================================================
-     ВКЛАДКА: РЕЙДЫ
-     ============================================================ -->
-<section id="raids-view" class="raids-board-view hidden">
-  <div class="raids-board-header">
-    <h2>Рейды</h2>
-  </div>
 
-  <div class="raid-board-scroll">
-    <table class="raid-board">
-      <thead>
-        <tr>
-          <th>Персонаж</th>
-          <th>Сбор золота</th>
-          <th>Арсенос</th>
-          <th>Серка</th>
-          <th>Казерос</th>
-          <th>Армог</th>
-        </tr>
-      </thead>
-      <tbody id="raid-board-body"></tbody>
-    </table>
-  </div>
-</section>
 <!-- ============================================================
      МОДАЛКА: ВЫБОР КЛАССА
      ============================================================ -->
@@ -336,7 +310,7 @@
       <h3 class="modal-title" id="raid-mode-title">—</h3>
       <p class="raid-ilvl-hint">Требуемый ГС: <span id="raid-required-ilvl">—</span></p>
       <div class="raid-datetime-row">
-        <select id="raid-weekday-input" class="raid-date-input"><option value="3">Среда</option><option value="4">Четверг</option><option value="5">Пятница</option><option value="6">Суббота</option><option value="7">Воскресенье</option><option value="1">Понедельник</option><option value="2">Вторник</option></select>
+        <input type="date" id="raid-date-input" class="raid-date-input">
         <input type="time" id="raid-time-input" class="raid-time-input">
       </div>
       <button id="raid-create-btn" class="raid-create-btn">Создать рейд</button>

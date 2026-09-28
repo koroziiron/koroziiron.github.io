@@ -2,9 +2,9 @@
 // СЛОЙ РАБОТЫ С SUPABASE
 // ============================================================
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { SUPABASE_URL, SUPABASE_KEY, ACCESS_KEY_SALT } from '../supabase-config.js';
+import { SUPABASE_URL, SUPABASE_KEY, ACCESS_KEY_SALT } from './supabase-config.js';
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ------------------------------------------------------------
 // Хеширование ключа
@@ -48,9 +48,9 @@ export async function getCharacters(memberId) {
       name,
       item_level,
       combat_power,
-      gold_coin_active,
-      sort_order,
       class_id,
+      sort_order,
+      gold_coin_active,
       classes (
         id,
         name,
@@ -59,7 +59,7 @@ export async function getCharacters(memberId) {
       )
     `)
     .eq('member_id', memberId)
-    .order('item_level', { ascending: false });
+    .order('sort_order', { ascending: true }).order('created_at', { ascending: true });
 
   if (error) return { error };
   return { characters: data };
@@ -152,12 +152,71 @@ export async function ping() {
 // ------------------------------------------------------------
 // Получить все рейды в диапазоне дат (с записями и классами персонажей)
 // ------------------------------------------------------------
-export async function getRaidsInRange(){const {data,error}=await supabase.from('raids').select('id,weekday,start_time,datetime,max_players,status,created_by,raid_type_id,raid_types(id,name,mode,size,required_ilvl,icon_id),signups(id,character_id,member_id,role,week_start,raid_key,characters(id,name,item_level,combat_power,class_id,classes(id,name,role,icon_id)))').order('weekday').order('start_time');if(error)return {error};return {raids:data||[]};}
+export async function getRaidsInRange(startIso, endIso) {
+  const { data, error } = await supabase
+    .from('raids')
+    .select(`
+      id,
+      datetime,
+      max_players,
+      status,
+      created_by,
+      raid_type_id,
+      raid_types (
+        id,
+        name,
+        mode,
+        size,
+        required_ilvl,
+        icon_id
+      ),
+      signups (
+        id,
+        character_id,
+        member_id,
+        role,
+        characters (
+          id,
+          name,
+          item_level,
+          combat_power,
+          class_id,
+          classes (
+            id,
+            name,
+            role,
+            icon_id
+          )
+        )
+      )
+    `)
+    .gte('datetime', startIso)
+    .lt('datetime', endIso)
+    .order('datetime', { ascending: true });
+
+  if (error) return { error };
+  return { raids: data };
+}
 
 // ------------------------------------------------------------
 // Создать рейд
 // ------------------------------------------------------------
-export async function createRaid({raid_type_id,weekday,start_time,max_players,created_by}){const {data,error}=await supabase.from('raids').insert({raid_type_id,weekday,start_time,max_players,status:'open',created_by}).select().single();if(error)return {error};return {raid:data};}
+export async function createRaid({ raid_type_id, datetime, max_players, created_by }) {
+  const { data, error } = await supabase
+    .from('raids')
+    .insert({
+      raid_type_id,
+      datetime,
+      max_players,
+      status: 'open',
+      created_by,
+    })
+    .select()
+    .single();
+
+  if (error) return { error };
+  return { raid: data };
+}
 
 // ------------------------------------------------------------
 // Удалить рейд
@@ -175,7 +234,7 @@ export async function deleteRaid(raidId) {
 // ------------------------------------------------------------
 // Записать персонажа на рейд
 // ------------------------------------------------------------
-export async function signup({ raid_id, character_id, member_id, role, week_start, raid_key }) {
+export async function signup({ raid_id, character_id, member_id, role }) {
   const { data, error } = await supabase
     .from('signups')
     .insert({
@@ -183,8 +242,6 @@ export async function signup({ raid_id, character_id, member_id, role, week_star
       character_id,
       member_id,
       role,
-      week_start,
-      raid_key,
     })
     .select()
     .single();

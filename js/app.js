@@ -228,19 +228,37 @@ function buildCharCard(ch, isNew) {
   const card = document.createElement('div');
   card.className = 'char-card';
   card.dataset.charId = ch.id;
-card.draggable = true;  // ← НОВОЕ
-
-  // НОВОЕ: drag
-  card.addEventListener('dragstart', e => {
-    state.draggingCharacter = ch;
-    e.dataTransfer.setData('text/character-id', ch.id);
-    e.dataTransfer.effectAllowed = 'move';
-    card.classList.add('dragging');
-  });
-  card.addEventListener('dragend', () => {
-    state.draggingCharacter = null;
-    card.classList.remove('dragging');
-  });
+// В режиме редактирования перетаскивание отключено: поля и кнопки не должны конфликтовать.
+  card.draggable = !state.editMode && !isNew;
+  if (!state.editMode && !isNew) {
+    card.addEventListener('dragstart', e => {
+      state.draggingCharacter = ch;
+      e.dataTransfer.setData('text/character-id', ch.id);
+      e.dataTransfer.effectAllowed = 'move';
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', () => {
+      state.draggingCharacter = null;
+      card.classList.remove('dragging');
+    });
+    card.addEventListener('dragover', e => e.preventDefault());
+    card.addEventListener('drop', async e => {
+      e.preventDefault();
+      const movingId = e.dataTransfer.getData('text/character-id');
+      if (!movingId || movingId === ch.id) return;
+      const order = state.characters.filter(x => !state.draft.deleted.has(x.id)).map(x => x.id);
+      const from = order.indexOf(movingId), to = order.indexOf(ch.id);
+      if (from < 0 || to < 0) return;
+      order.splice(to, 0, order.splice(from, 1)[0]);
+      const byId = new Map(state.characters.map(x => [x.id, x]));
+      state.characters = order.map(id => byId.get(id)).concat(state.characters.filter(x => !order.includes(x.id)));
+      renderCharacters();
+      for (let i = 0; i < order.length; i++) {
+        const { error } = await dragonsSupabase.from('characters').update({ sort_order: i + 1 }).eq('id', order[i]).eq('member_id', state.member.id);
+        if (error) { console.error(error); showToast('Не удалось сохранить порядок персонажей', 'error'); await loadCharacters(); renderCharacters(); return; }
+      }
+    });
+  }
   
   // Помечен на удаление?
   if (state.draft.deleted.has(ch.id)) {
@@ -949,7 +967,7 @@ async function loadRaidBoard(){const body=$('raid-board-body');if(!body||!state.
 const done=new Map(progress.map(p=>[p.character_id+'|'+p.raid_key,p.completed]));const signed=new Set();for(const r of state.raids)for(const s of r.signups||[])if(s.member_id===state.member.id&&s.week_start===weekStartDate())signed.add(s.character_id+'|'+r.raid_types?.name);
 const chars=[...state.characters].sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));for(const ch of chars){const tr=document.createElement('tr');tr.draggable=true;tr.dataset.id=ch.id;const name=document.createElement('td');name.className='board-character';name.textContent=ch.name;tr.appendChild(name);const coinCell=document.createElement('td');const coin=document.createElement('button');coin.className='coin-toggle'+(ch.gold_coin_active===false?' muted':'');coin.textContent='◉';coin.title='Сбор золота';coin.onclick=async()=>{const v=ch.gold_coin_active===false;const {error}=await dragonsSupabase.from('characters').update({gold_coin_active:v}).eq('id',ch.id);if(error){showToast('Не удалось сохранить','error');return;}ch.gold_coin_active=v;coin.classList.toggle('muted',!v);};coinCell.appendChild(coin);tr.appendChild(coinCell);let all=true;
 for(const key of BOARD_KEYS){const td=document.createElement('td');const can=Number(ch.item_level||0)>=normalIlvl(key),doneNow=done.get(ch.id+'|'+key)===true,isSigned=signed.has(ch.id+'|'+key);if(!doneNow)all=false;const btn=document.createElement('button');btn.className='progress-toggle '+(!can?'blocked':doneNow?'done':isSigned?'signed':'empty');btn.textContent=!can?'×':doneNow?'✓':isSigned?'−':'';btn.disabled=!can;btn.title=!can?'Недостаточный ГС':doneNow?'Снять отметку':'Отметить выполнение';btn.onclick=async()=>{const {error}=await dragonsSupabase.from('character_raid_progress').upsert({character_id:ch.id,raid_key:key,completed:!doneNow,updated_at:new Date().toISOString()},{onConflict:'character_id,raid_key'});if(error){showToast('Не удалось сохранить отметку','error');return;}loadRaidBoard();};td.appendChild(btn);tr.appendChild(td);}if(all)tr.classList.add('all-done');
-tr.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/dragon-character',ch.id);tr.classList.add('dragging');});tr.addEventListener('dragend',()=>tr.classList.remove('dragging'));tr.addEventListener('dragover',e=>e.preventDefault());tr.addEventListener('drop',async e=>{e.preventDefault();const moving=e.dataTransfer.getData('text/dragon-character');if(!moving||moving===ch.id)return;const order=[...body.querySelectorAll('tr[data-id]')].map(x=>x.dataset.id),a=order.indexOf(moving),z=order.indexOf(ch.id);order.splice(z,0,order.splice(a,1)[0]);for(let i=0;i<order.length;i++){const {error}=await dragonsSupabase.from('characters').update({sort_order:i+1}).eq('id',order[i]);if(error){showToast('Не удалось сохранить порядок','error');return;}}state.characters.sort((x,y)=>order.indexOf(x.id)-order.indexOf(y.id));loadRaidBoard();});body.appendChild(tr);}}
+tr.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/dragon-character',ch.id);tr.classList.add('dragging');});tr.addEventListener('dragend',()=>tr.classList.remove('dragging'));tr.addEventListener('dragover',e=>e.preventDefault());tr.addEventListener('drop',async e=>{e.preventDefault();const moving=e.dataTransfer.getData('text/dragon-character');if(!moving||moving===ch.id)return;const order=[...body.querySelectorAll('tr[data-id]')].map(x=>x.dataset.id),a=order.indexOf(moving),z=order.indexOf(ch.id);order.splice(z,0,order.splice(a,1)[0]);for(let i=0;i<order.length;i++){const {error}=await dragonsSupabase.from('characters').update({sort_order:i+1}).eq('id',order[i]).eq('member_id',state.member.id);if(error){showToast('Не удалось сохранить порядок','error');return;}}state.characters.sort((x,y)=>order.indexOf(x.id)-order.indexOf(y.id));loadRaidBoard();});body.appendChild(tr);}}
 setupTabs();
 
 // ------------------------------------------------------------
