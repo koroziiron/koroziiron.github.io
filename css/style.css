@@ -576,6 +576,19 @@ SVG-ГРАДИЕНТЫ (скрытые)
 .stat-input:focus {
   border-color: var(--gold);
 }
+.stat-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+.stat-input::-webkit-outer-spin-button,
+.stat-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.stat-input[type=number] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
 
 /* ---------- Кнопка "+" ---------- */
 .add-character-btn {
