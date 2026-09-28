@@ -234,12 +234,14 @@ card.draggable = true;  // ← НОВОЕ
   // НОВОЕ: drag
   card.addEventListener('dragstart', e => {
     state.draggingCharacter = ch;
-    e.dataTransfer.setData('text/character-id', ch.id);
+    state.draggingId = String(ch.id);
+    e.dataTransfer.setData('text/plain', String(ch.id));
     e.dataTransfer.effectAllowed = 'move';
     card.classList.add('dragging');
   });
   card.addEventListener('dragend', () => {
     state.draggingCharacter = null;
+    state.draggingId = null;
     card.classList.remove('dragging');
   });
   
@@ -656,7 +658,7 @@ function renderSchedule() {
  const days=[{v:3,n:'Среда'},{v:4,n:'Четверг'},{v:5,n:'Пятница'},{v:6,n:'Суббота'},{v:7,n:'Воскресенье'},{v:1,n:'Понедельник'},{v:2,n:'Вторник'}];
  const used=days.map(d=>({...d,raids:state.raids.filter(r=>Number(r.weekday)===d.v).sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||''))})).filter(d=>d.raids.length);
  if(!used.length){root.innerHTML='<div class="schedule-empty">Расписание пока пустое. Создай первый рейд.</div>';return;}
- for(const d of used){const col=document.createElement('section');col.className='weekday-column';const h=document.createElement('h3');h.className='weekday-title';h.textContent=d.n;col.appendChild(h);for(const raid of d.raids){const card=buildRaidCard(raid);card.style.position='relative';card.style.left='auto';const t=document.createElement('div');t.className='weekday-time';t.textContent=(raid.start_time||'20:00').slice(0,5)+' МСК';card.insertBefore(t,card.firstChild);col.appendChild(card);}root.appendChild(col);}
+ for(const d of used){const col=document.createElement('section');col.className='weekday-column';const h=document.createElement('h3');h.className='weekday-title';h.textContent=d.n;col.appendChild(h);for(const raid of d.raids){const card=buildRaidCard(raid);const t=document.createElement('div');t.className='weekday-time';t.textContent=(raid.start_time||'20:00').slice(0,5)+' МСК';card.insertBefore(t,card.firstChild);col.appendChild(card);}root.appendChild(col);}
 }
 
 function formatDayLabel(date) {
@@ -784,13 +786,21 @@ function buildRaidCard(raid) {
   }
 
   // Drop-зона
-  card.addEventListener('dragover', e => {
+  card.addEventListener('dragenter', e => {
+    if (!e.dataTransfer || ![...e.dataTransfer.types].includes('text/plain')) return;
     e.preventDefault();
-    if (card.classList.contains('drag-over')) return;
     card.classList.add('drag-over');
   });
 
-  card.addEventListener('dragleave', () => {
+  card.addEventListener('dragover', e => {
+    if (!e.dataTransfer || ![...e.dataTransfer.types].includes('text/plain')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    card.classList.add('drag-over');
+  });
+
+  card.addEventListener('dragleave', e => {
+    if (e.relatedTarget && card.contains(e.relatedTarget)) return;
     card.classList.remove('drag-over');
   });
 
@@ -798,7 +808,7 @@ function buildRaidCard(raid) {
     e.preventDefault();
     card.classList.remove('drag-over');
 
-    const charId = e.dataTransfer.getData('text/character-id');
+    const charId = e.dataTransfer.getData('text/plain') || state.draggingId;
     if (!charId) return;
     const character = state.characters.find(c => c.id === charId);
     if (!character) return;
