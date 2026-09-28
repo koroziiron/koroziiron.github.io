@@ -1148,6 +1148,14 @@ SVG-ГРАДИЕНТЫ (скрытые)
   opacity: 0.4;
 }
 
+/* Перетаскивание строк в таблице рейдов */
+.raid-board tbody tr[draggable="true"] {
+  cursor: grab;
+}
+.raid-board tbody tr.dragging {
+  opacity: 0.4;
+}
+
 /* ---------- Модалка создания рейда ---------- */
 .raid-type-grid,
 .raid-mode-grid {

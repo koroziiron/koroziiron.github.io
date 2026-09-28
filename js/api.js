@@ -59,9 +59,35 @@ export async function getCharacters(memberId) {
       )
     `)
     .eq('member_id', memberId)
+    .order('sort_order', { ascending: true, nullsFirst: false })
     .order('item_level', { ascending: false });
 
-  if (error) return { error };
+  // sort_order мог появиться в запросе позже, чем колонка в БД —
+  // если колонок/прав нет, повторяем запрос без sort_order,
+  // иначе не грузится вообще ничего (в т.ч. таблица рейдов).
+  if (error) {
+    const retry = await supabase
+      .from('characters')
+      .select(`
+        id,
+        name,
+        item_level,
+        combat_power,
+        gold_coin_active,
+        class_id,
+        classes (
+          id,
+          name,
+          role,
+          icon_id
+        )
+      `)
+      .eq('member_id', memberId)
+      .order('item_level', { ascending: false });
+
+    if (retry.error) return { error: retry.error };
+    return { characters: retry.data };
+  }
   return { characters: data };
 }
 
