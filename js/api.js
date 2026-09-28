@@ -1,27 +1,20 @@
-// ============================================================
-// СЛОЙ РАБОТЫ С SUPABASE
-// ============================================================
+
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { SUPABASE_URL, SUPABASE_KEY, ACCESS_KEY_SALT } from './supabase-config.js';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ------------------------------------------------------------
-// Хеширование ключа
-// ------------------------------------------------------------
+// ---------- Авторизация ----------
+
 export async function hashKey(rawKey) {
-  const str = ACCESS_KEY_SALT + rawKey;
-  const buf = new TextEncoder().encode(str);
-  const hash = await crypto.subtle.digest('SHA-256', buf);
+  const bytes = new TextEncoder().encode(ACCESS_KEY_SALT + rawKey);
+  const hash = await crypto.subtle.digest('SHA-256', bytes);
+
   return Array.from(new Uint8Array(hash))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('');
 }
 
-// ------------------------------------------------------------
-// Логин по ключу
-// Возвращает { member } или { error }
-// ------------------------------------------------------------
 export async function login(rawKey) {
   const hash = await hashKey(rawKey);
 
@@ -37,20 +30,34 @@ export async function login(rawKey) {
   return { member: data };
 }
 
-// ------------------------------------------------------------
-// Персонажи пользователя (с иконкой и ролью класса)
-// ------------------------------------------------------------
+export async function ping() {
+  try {
+    const { error } = await supabase
+      .from('members')
+      .select('id')
+      .limit(1);
+
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+// ---------- Персонажи ----------
+
 export async function getCharacters(memberId) {
   const { data, error } = await supabase
     .from('characters')
     .select(`
       id,
+      member_id,
       name,
       item_level,
       combat_power,
       class_id,
       sort_order,
       gold_coin_active,
+      created_at,
       classes (
         id,
         name,
@@ -59,15 +66,13 @@ export async function getCharacters(memberId) {
       )
     `)
     .eq('member_id', memberId)
-    .order('sort_order', { ascending: true }).order('created_at', { ascending: true });
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
 
   if (error) return { error };
-  return { characters: data };
+  return { characters: data || [] };
 }
 
-// ------------------------------------------------------------
-// Все классы (для модалки добавления персонажа)
-// ------------------------------------------------------------
 export async function getClasses() {
   const { data, error } = await supabase
     .from('classes')
@@ -75,89 +80,80 @@ export async function getClasses() {
     .order('id', { ascending: true });
 
   if (error) return { error };
-  return { classes: data };
+  return { classes: data || [] };
 }
 
-// ------------------------------------------------------------
-// Сохранение изменений одним батчем:
-//   - inserted: [{ name, class_id, item_level, combat_power }]
-//   - updated:  [{ id, item_level, combat_power }]
-//   - deleted:  [id, id, ...]
-// ------------------------------------------------------------
-export async function saveChanges(memberId, { inserted, updated, deleted }) {
+export async function saveChanges(memberId, { inserted = [], updated = [], deleted = [] }) {
   const errors = [];
 
-  // 1. Удаление
-  if (deleted.length > 0) {
+  if (deleted.length) {
     const { error } = await supabase
       .from('characters')
       .delete()
+      .eq('member_id', memberId)
       .in('id', deleted);
+
     if (error) errors.push({ op: 'delete', error });
   }
 
-  // 2. Обновление
   for (const ch of updated) {
     const { error } = await supabase
       .from('characters')
       .update({
         item_level: ch.item_level,
         combat_power: ch.combat_power,
-        updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       })
+      .eq('member_id', memberId)
       .eq('id', ch.id);
+
     if (error) errors.push({ op: 'update', id: ch.id, error });
   }
 
-  // 3. Вставка
-  if (inserted.length > 0) {
+  if (inserted.length) {
     const payload = inserted.map(ch => ({
       member_id: memberId,
       name: ch.name,
       class_id: ch.class_id,
       item_level: ch.item_level,
-      combat_power: ch.combat_power,
+      combat_power: ch.combat_power
     }));
 
     const { error } = await supabase
       .from('characters')
       .insert(payload);
+
     if (error) errors.push({ op: 'insert', error });
   }
 
-  if (errors.length > 0) return { error: errors };
-  return { success: true };
+  return errors.length ? { error: errors } : { success: true };
 }
 
-// ------------------------------------------------------------
-// Проверка доступности сервера
-// ------------------------------------------------------------
-export async function ping() {
-  try {
-    const { error } = await supabase
-      .from('members')
-      .select('id')
-      .limit(1);
-    return !error;
-  } catch {
-    return false;
-  }
+// ---------- Справочник рейдов ----------
+
+export async function getRaidTypes() {
+  const { data, error } = await supabase
+    .from('raid_types')
+    .select('id, name, mode, size, required_ilvl, icon_id')
+    .order('name', { ascending: true })
+    .order('mode', { ascending: true });
+
+  if (error) return { error };
+  return { raidTypes: data || [] };
 }
 
+// ---------- Расписание ----------
 
-// ============================================================
-// РЕЙДЫ — API
-// ============================================================
+// weekday: ISO день недели, 1 = понедельник ... 7 = воскресенье.
+// Слоты повторяются еженедельно, поэтому рейды загружаются без datetime.
 
-// ------------------------------------------------------------
-// Получить все рейды в диапазоне дат (с записями и классами персонажей)
-// ------------------------------------------------------------
-export async function getRaidsInRange(startIso, endIso) {
+export async function getRaidsInRange() {
   const { data, error } = await supabase
     .from('raids')
     .select(`
       id,
-      datetime,
+      weekday,
+      start_time,
       max_players,
       status,
       created_by,
@@ -175,6 +171,8 @@ export async function getRaidsInRange(startIso, endIso) {
         character_id,
         member_id,
         role,
+        week_start,
+        raid_key,
         characters (
           id,
           name,
@@ -190,26 +188,29 @@ export async function getRaidsInRange(startIso, endIso) {
         )
       )
     `)
-    .gte('datetime', startIso)
-    .lt('datetime', endIso)
-    .order('datetime', { ascending: true });
+    .order('weekday', { ascending: true })
+    .order('start_time', { ascending: true });
 
   if (error) return { error };
-  return { raids: data };
+  return { raids: data || [] };
 }
 
-// ------------------------------------------------------------
-// Создать рейд
-// ------------------------------------------------------------
-export async function createRaid({ raid_type_id, datetime, max_players, created_by }) {
+export async function createRaid({
+  raid_type_id,
+  weekday,
+  start_time,
+  max_players,
+  created_by
+}) {
   const { data, error } = await supabase
     .from('raids')
     .insert({
       raid_type_id,
-      datetime,
+      weekday,
+      start_time,
       max_players,
       status: 'open',
-      created_by,
+      created_by
     })
     .select()
     .single();
@@ -218,9 +219,6 @@ export async function createRaid({ raid_type_id, datetime, max_players, created_
   return { raid: data };
 }
 
-// ------------------------------------------------------------
-// Удалить рейд
-// ------------------------------------------------------------
 export async function deleteRaid(raidId) {
   const { error } = await supabase
     .from('raids')
@@ -231,10 +229,16 @@ export async function deleteRaid(raidId) {
   return { success: true };
 }
 
-// ------------------------------------------------------------
-// Записать персонажа на рейд
-// ------------------------------------------------------------
-export async function signup({ raid_id, character_id, member_id, role }) {
+// ---------- Записи ----------
+
+export async function signup({
+  raid_id,
+  character_id,
+  member_id,
+  role,
+  week_start,
+  raid_key
+}) {
   const { data, error } = await supabase
     .from('signups')
     .insert({
@@ -242,6 +246,8 @@ export async function signup({ raid_id, character_id, member_id, role }) {
       character_id,
       member_id,
       role,
+      week_start,
+      raid_key
     })
     .select()
     .single();
@@ -250,9 +256,6 @@ export async function signup({ raid_id, character_id, member_id, role }) {
   return { signup: data };
 }
 
-// ------------------------------------------------------------
-// Удалить запись
-// ------------------------------------------------------------
 export async function unsign(signupId) {
   const { error } = await supabase
     .from('signups')
@@ -261,18 +264,4 @@ export async function unsign(signupId) {
 
   if (error) return { error };
   return { success: true };
-}
-
-// ------------------------------------------------------------
-// Получить справочник типов рейдов (со сложностями)
-// ------------------------------------------------------------
-export async function getRaidTypes() {
-  const { data, error } = await supabase
-    .from('raid_types')
-    .select('id, name, mode, size, required_ilvl, icon_id')
-    .order('name', { ascending: true })
-    .order('mode', { ascending: true });
-
-  if (error) return { error };
-  return { raidTypes: data };
 }
