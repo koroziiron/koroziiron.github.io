@@ -1004,7 +1004,11 @@ function refreshRaidBoard() {
 // Синхронизация таблички с изменениями персонажей (ГС/БС/имя/состав)
 let boardSyncTimer = null;
 function syncRaidBoardWithCharacters() {
-  if (!raidBoardLoaded) { if (isRaidBoardVisible()) loadRaidBoard(); return; }
+  // Табличка ещё не отрисована (вкладка рейдов была закрыта) — просто помечаем
+  // её грязной: при открытии вкладки она загрузится уже в актуальном порядке.
+  // Никаких рекурсивных вызовов loadRaidBoard() отсюда — иначе перерисовка
+  // списка и таблички зацикливали друг друга и список «не обновлялся».
+  if (!raidBoardLoaded) { raidBoardDirty = true; return; }
   clearTimeout(boardSyncTimer);
   boardSyncTimer = setTimeout(() => {
     const body = $('raid-board-body');
@@ -1080,13 +1084,12 @@ async function loadRaidBoard() {
   for (const r of state.raids) for (const s of r.signups || []) if (s.member_id === state.member.id && s.week_start === weekStartDate()) signedChars.add(s.character_id + '|' + (r.raid_types?.name));
 
   const chars = sortedCharacters(); // тот же порядок, что и в списке «Мои персонажи»
-  // Фиксируем фактический порядок строк в sort_order (в памяти — сразу, в БД — в фоне),
-  // иначе список (сортировка по sort_order) и табличка (порядок DOM после перетаскиваний) разъезжаются
+  // Нормализуем sort_order в памяти по фактическому порядку (i+1), чтобы он
+  // всегда совпадал с табличкой. В БД пишем только явно новые значения порядка
+  // (после drag&drop drop-обработчик сохраняет сам) — здесь не трогаем БД,
+  // иначе лишние записи перезаписывают результат перетаскивания.
   for (let i = 0; i < chars.length; i++) {
-    if (Number(chars[i].sort_order) !== i + 1) {
-      chars[i].sort_order = i + 1;
-      dragonsSupabase.from('characters').update({ sort_order: i + 1 }).eq('id', chars[i].id).then(() => {});
-    }
+    if (Number(chars[i].sort_order) !== i + 1) chars[i].sort_order = i + 1;
   }
   for (const ch of chars) {
     const tr = document.createElement('tr');
@@ -1155,24 +1158,25 @@ async function loadRaidBoard() {
       const a = order.indexOf(String(moving)), z = order.indexOf(String(ch.id));
       if (a < 0 || z < 0) return;
       order.splice(z, 0, order.splice(a, 1)[0]);
-      // Применяем новый порядок сразу и локально, НЕ дожидаясь ответа БД —
-      // иначе при медленном/ошибочном запросе список оставался бы в старом порядке
-      const applyOrder = () => {
-        // Порядок меняем прямо в DOM — без пересоздания строк
-        for (const id of order) body.appendChild(body.querySelector('tr[data-id="' + id + '"]'));
-        // sort_order в памяти ставим по новому порядку (i+1), чтобы sortedCharacters()
-        // совпал с табличкой мгновенно — не полагаемся на то, что БД вернёт эти же значения
-        for (let i = 0; i < order.length; i++) {
-          const c = state.characters.find(x => String(x.id) === order[i]);
-          if (c) c.sort_order = i + 1;
-        }
-        // Список «Мои персонажи» рисуем в том же порядке, что и табличка рейдов
-        renderCharacters();
-      };
-      applyOrder();
+
+      // 1. Применяем новый порядок СРАЗУ и локально, не дожидаясь ответа БД:
+      //    перестраиваем строки таблички в DOM
+      for (const id of order) body.appendChild(body.querySelector('tr[data-id="' + id + '"]'));
+      //    обновляем sort_order в памяти по новому порядку
       for (let i = 0; i < order.length; i++) {
-        const { error } = await dragonsSupabase.from('characters').update({ sort_order: i + 1 }).eq('id', order[i]);
-        if (error) { showToast('Не удалось сохранить порядок', 'error'); break; }
+        const c = state.characters.find(x => String(x.id) === order[i]);
+        if (c) c.sort_order = i + 1;
+      }
+      // 2. Перерисовываем список «Мои персонажи» в новом порядке
+      //    (sortedCharacters() уже учитывает обновлённый sort_order)
+      renderCharacters();
+      raidBoardDirty = false;
+
+      // 3. Сохраняем порядок в БД в фоне; при ошибке ничего не откатываем —
+      //    локальный порядок остаётся, а при следующей загрузке таблички он
+      //    будет зафиксирован заново
+      for (let i = 0; i < order.length; i++) {
+        await dragonsSupabase.from('characters').update({ sort_order: i + 1 }).eq('id', order[i]);
       }
     });
     body.appendChild(tr);
