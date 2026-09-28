@@ -50,6 +50,7 @@ export async function getCharacters(memberId) {
       combat_power,
       gold_coin_active,
       sort_order,
+      updated_at,
       class_id,
       classes (
         id,
