@@ -309,10 +309,17 @@
     <div id="raid-step-3" class="modal-step">
       <h3 class="modal-title" id="raid-mode-title">—</h3>
       <p class="raid-ilvl-hint">Требуемый ГС: <span id="raid-required-ilvl">—</span></p>
-      <div class="raid-datetime-row">
-        <input type="date" id="raid-date-input" class="raid-date-input">
-        <input type="time" id="raid-time-input" class="raid-time-input">
+      <div class="raid-picker-section">
+        <div class="raid-picker-label">Дата</div>
+        <div id="raid-date-quick" class="raid-date-quick" aria-label="Быстрый выбор даты"></div>
+        <input type="date" id="raid-date-input" class="raid-date-input" aria-label="Другая дата">
       </div>
+      <div class="raid-picker-section">
+        <div class="raid-picker-label">Время · МСК</div>
+        <div id="raid-time-presets" class="raid-time-presets"></div>
+        <input type="time" id="raid-time-input" class="raid-time-input" value="20:00" aria-label="Другое время">
+      </div>
+      <div id="raid-datetime-preview" class="raid-datetime-preview" aria-live="polite"></div>
       <button id="raid-create-btn" class="raid-create-btn">Создать рейд</button>
     </div>
   </div>
