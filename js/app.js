@@ -817,10 +817,11 @@ function buildRaidCard(raid) {
     name.textContent = s.characters?.name || '???';
     row.appendChild(name);
 
-    const ilvl = document.createElement('span');
-    ilvl.className = 'raid-signup-ilvl ' + getGsClass(s.characters?.item_level);
-    ilvl.textContent = s.characters?.item_level || 0;
-    row.appendChild(ilvl);
+    const bs = document.createElement('span');
+    bs.className = 'raid-signup-ilvl ' + getGsClass(s.characters?.item_level);
+    bs.title = 'Боевая сила';
+    bs.textContent = s.characters?.combat_power ?? 0;
+    row.appendChild(bs);
 
     // Кнопка удаления записи (свои или админ)
     if (s.member_id === state.member.id || state.member.nickname === 'korozii') {
@@ -940,6 +941,18 @@ function validateSignup(raid, character) {
 }
 
 $('add-raid-btn').addEventListener('click', openRaidModal);
+$('modal-raid-close').addEventListener('click', closeRaidModal);
+$('modal-raid').addEventListener('click', e => {
+  if (e.target === $('modal-raid')) closeRaidModal();
+});
+
+function closeRaidModal() {
+  $('modal-raid').classList.remove('active');
+  $('raid-step-1').classList.add('active');
+  $('raid-step-2').classList.remove('active');
+  $('raid-step-3').classList.remove('active');
+  state.pendingRaidType = null;
+}
 
 function openRaidModal() {
   $('modal-raid').classList.add('active');
@@ -1063,10 +1076,6 @@ $('raid-create-btn').addEventListener('click', async () => {
   }
 
   const dt = new Date(`${date}T${time}:00`);
-  if (dt.getTime() < Date.now()) {
-    showToast('Нельзя создать рейд в прошлом', 'error');
-    return;
-  }
 
   const r = await createRaid({
     raid_type_id: state.pendingRaidType.id,
@@ -1081,7 +1090,7 @@ $('raid-create-btn').addEventListener('click', async () => {
     return;
   }
 
-  $('modal-raid').classList.remove('active');
+  closeRaidModal();
   showToast('Рейд создан', 'success');
   await loadRaids();
   renderSchedule();

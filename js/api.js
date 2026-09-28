@@ -188,8 +188,6 @@ export async function getRaidsInRange(startIso, endIso) {
         )
       )
     `)
-    .gte('datetime', startIso)
-    .lt('datetime', endIso)
     .order('datetime', { ascending: true });
 
   if (error) return { error };
