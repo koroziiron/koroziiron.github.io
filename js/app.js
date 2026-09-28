@@ -196,13 +196,41 @@ function resetDraft() {
 }
 
 // ------------------------------------------------------------
+// ОБЩИЙ ПОРЯДОК ПЕРСОНАЖЕЙ
+// Список «Мои персонажи» и табличка рейдов используют один и тот же
+// порядок: sort_order из БД (ставится drag&drop в табличке рейдов).
+// ------------------------------------------------------------
+function compareBySortOrder(a, b) {
+  const sa = Number(a.sort_order);
+  const sb = Number(b.sort_order);
+  const va = Number.isFinite(sa) && sa !== 0 ? sa : Infinity;
+  const vb = Number.isFinite(sb) && sb !== 0 ? sb : Infinity;
+  if (va !== vb) return va - vb;
+  return (Number(b.item_level) || 0) - (Number(a.item_level) || 0);
+}
+
+function sortedCharacters() {
+  return [...state.characters].sort(compareBySortOrder);
+}
+
+// Максимальный текущий sort_order (для добавления новых персонажей в конец)
+function maxSortOrder() {
+  let m = 0;
+  for (const ch of state.characters) {
+    const v = Number(ch.sort_order);
+    if (Number.isFinite(v) && v > m) m = v;
+  }
+  return m;
+}
+
+// ------------------------------------------------------------
 // РЕНДЕР СПИСКА ПЕРСОНАЖЕЙ
 // ------------------------------------------------------------
 function renderCharacters() {
   const list = $('characters-list');
   list.innerHTML = '';
-  // Существующие персонажи
-  for (const ch of state.characters) {
+  // Существующие персонажи — в том же порядке, что и в табличке рейдов
+  for (const ch of sortedCharacters()) {
     list.appendChild(buildCharCard(ch, false));
   }
   // Локально созданные (ещё не в БД)
@@ -434,11 +462,12 @@ $('cancel-btn').addEventListener('click', () => {
 // КНОПКА СОХРАНЕНИЯ
 // ------------------------------------------------------------
 $('save-btn').addEventListener('click', async () => {
-  const inserted = state.draft.inserted.map(c => ({
+  const inserted = state.draft.inserted.map((c, i) => ({
     name: c.name,
     class_id: c.class_id,
     item_level: c.item_level ?? null,
     combat_power: c.combat_power ?? null,
+    sort_order: (maxSortOrder() + 1 + i), // новые — в конец списка
   }));
   const updated = Object.values(state.draft.updated);
   const deleted = Array.from(state.draft.deleted);
@@ -978,10 +1007,14 @@ function syncRaidBoardWithCharacters() {
     if (!body || !isRaidBoardVisible()) { raidBoardLoaded = false; raidBoardDirty = true; return; }
     // Состав строк изменился (добавили/удалили персонажа) — нужна полная перерисовка
     const rowIds = [...body.querySelectorAll('tr[data-id]')].map(x => x.dataset.id);
-    const charIds = state.characters.map(c => String(c.id));
+    const charIds = sortedCharacters().map(c => String(c.id));
     if (rowIds.length !== charIds.length || charIds.some(id => !rowIds.includes(id))) {
       loadRaidBoard();
       return;
+    }
+    // Порядок в табличке разошёлся с sort_order (например, меняли списком) — перестроить строки
+    if (rowIds.some((id, i) => id !== charIds[i])) {
+      for (const id of charIds) body.appendChild(body.querySelector('tr[data-id="' + id + '"]'));
     }
     // Иначе обновляем ячейки на месте — без перезагрузки и дёрганья
     for (const ch of state.characters) {
@@ -1042,7 +1075,7 @@ async function loadRaidBoard() {
   signedChars.clear();
   for (const r of state.raids) for (const s of r.signups || []) if (s.member_id === state.member.id && s.week_start === weekStartDate()) signedChars.add(s.character_id + '|' + (r.raid_types?.name));
 
-  const chars = [...state.characters].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const chars = sortedCharacters(); // тот же порядок, что и в списке «Мои персонажи»
   for (const ch of chars) {
     const tr = document.createElement('tr');
     tr.draggable = true;
@@ -1113,6 +1146,8 @@ async function loadRaidBoard() {
       state.characters.sort((x, y) => order.indexOf(String(x.id)) - order.indexOf(String(y.id)));
       // Порядок меняем прямо в DOM — без пересоздания строк
       for (const id of order) body.appendChild(body.querySelector('tr[data-id="' + id + '"]'));
+      // Список «Мои персонажи» рисуем в том же порядке, что и табличка рейдов
+      if (!state.editMode) renderCharacters();
     });
     body.appendChild(tr);
   }
