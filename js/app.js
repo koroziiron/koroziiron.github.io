@@ -469,6 +469,7 @@ $('save-btn').addEventListener('click', async () => {
   $('save-btn').classList.add('hidden');
   await loadCharacters();
   renderCharacters();
+  syncRaidBoardWithCharacters();
 });
 
 // ------------------------------------------------------------
@@ -762,6 +763,7 @@ function buildRaidCard(raid) {
         showToast('Убран с рейда', 'success');
         await loadRaids();
         renderSchedule();
+        refreshRaidBoard();
       });
       row.appendChild(del);
     }
@@ -827,6 +829,7 @@ function buildRaidCard(raid) {
     showToast('Записан на рейд', 'success');
     await loadRaids();
     renderSchedule();
+    refreshRaidBoard();
   });
 
   return card;
@@ -937,19 +940,184 @@ $('raid-create-btn').addEventListener('click',async()=>{
  if(!weekday||!start_time){showToast('Выбери день и время','error');return;}
  const r=await createRaid({raid_type_id:state.pendingRaidType.id,weekday,start_time,max_players:state.pendingRaidType.size,created_by:state.member.id});
  if(r.error){showToast('Не удалось создать слот','error');console.error(r.error);return;}
- closeRaidModal();showToast('Слот добавлен','success');await loadRaids();renderSchedule();
+ closeRaidModal();showToast('Слот добавлен','success');await loadRaids();renderSchedule();refreshRaidBoard();
 });
 
 
 function weekStartDate(){const n=new Date(new Date().toLocaleString('en-US',{timeZone:'Europe/Moscow'}));const back=(n.getDay()-3+7)%7+(n.getDay()===3&&n.getHours()<6?7:0);n.setDate(n.getDate()-back);n.setHours(6,0,0,0);return new Date(n.getTime()-10800000).toISOString().slice(0,10);}
 const BOARD_KEYS=['Арсенос','Серка','Казерос','Армог'];
-function setupTabs(){const nav=$('dragons-tabs');if(!nav)return;nav.querySelectorAll('[data-tab]').forEach(btn=>btn.addEventListener('click',()=>{nav.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===btn));$('schedule-view').classList.toggle('hidden',btn.dataset.tab!=='schedule');$('raids-view').classList.toggle('hidden',btn.dataset.tab!=='raids');if(btn.dataset.tab==='raids')loadRaidBoard();}));}
+function setupTabs(){const nav=$('dragons-tabs');if(!nav)return;nav.querySelectorAll('[data-tab]').forEach(btn=>btn.addEventListener('click',()=>{nav.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===btn));$('schedule-view').classList.toggle('hidden',btn.dataset.tab!=='schedule');$('raids-view').classList.toggle('hidden',btn.dataset.tab!=='raids');if(btn.dataset.tab==='raids'){if(!raidBoardLoaded||raidBoardDirty)loadRaidBoard();}}));}
 function normalIlvl(key){const list=state.raidTypes.filter(x=>x.name===key);return Number((list.find(x=>/normal|обыч/i.test(x.mode))||list[0])?.required_ilvl||Infinity);}
-async function loadRaidBoard(){const body=$('raid-board-body');if(!body||!state.member)return;body.innerHTML='';const ids=state.characters.map(c=>c.id);let progress=[];if(ids.length){const q=await dragonsSupabase.from('character_raid_progress').select('character_id,raid_key,completed').in('character_id',ids);if(q.error){body.innerHTML='<tr><td colspan="6">Ошибка загрузки отметок. Проверь RLS таблицы прогресса.</td></tr>';return;}progress=q.data||[];}
-const done=new Map(progress.map(p=>[p.character_id+'|'+p.raid_key,p.completed]));const signed=new Set();for(const r of state.raids)for(const s of r.signups||[])if(s.member_id===state.member.id&&s.week_start===weekStartDate())signed.add(s.character_id+'|'+r.raid_types?.name);
-const chars=[...state.characters].sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));for(const ch of chars){const tr=document.createElement('tr');tr.draggable=true;tr.dataset.id=ch.id;const name=document.createElement('td');name.className='board-character';name.textContent=ch.name;tr.appendChild(name);const coinCell=document.createElement('td');const coin=document.createElement('button');coin.className='coin-toggle'+(ch.gold_coin_active===false?' muted':'');coin.textContent='◉';coin.title='Сбор золота';coin.onclick=async()=>{const v=ch.gold_coin_active===false;const {error}=await dragonsSupabase.from('characters').update({gold_coin_active:v}).eq('id',ch.id);if(error){showToast('Не удалось сохранить','error');return;}ch.gold_coin_active=v;coin.classList.toggle('muted',!v);};coinCell.appendChild(coin);tr.appendChild(coinCell);let all=true;
-for(const key of BOARD_KEYS){const td=document.createElement('td');const can=Number(ch.item_level||0)>=normalIlvl(key),doneNow=done.get(ch.id+'|'+key)===true,isSigned=signed.has(ch.id+'|'+key);if(!doneNow)all=false;const btn=document.createElement('button');btn.className='progress-toggle '+(!can?'blocked':doneNow?'done':isSigned?'signed':'empty');btn.textContent=!can?'×':doneNow?'✓':isSigned?'−':'';btn.disabled=!can;btn.title=!can?'Недостаточный ГС':doneNow?'Снять отметку':'Отметить выполнение';btn.onclick=async()=>{const {error}=await dragonsSupabase.from('character_raid_progress').upsert({character_id:ch.id,raid_key:key,completed:!doneNow,updated_at:new Date().toISOString()},{onConflict:'character_id,raid_key'});if(error){showToast('Не удалось сохранить отметку','error');return;}loadRaidBoard();};td.appendChild(btn);tr.appendChild(td);}if(all)tr.classList.add('all-done');
-tr.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/dragon-character',ch.id);tr.classList.add('dragging');});tr.addEventListener('dragend',()=>tr.classList.remove('dragging'));tr.addEventListener('dragover',e=>e.preventDefault());tr.addEventListener('drop',async e=>{e.preventDefault();const moving=e.dataTransfer.getData('text/dragon-character');if(!moving||moving===ch.id)return;const order=[...body.querySelectorAll('tr[data-id]')].map(x=>x.dataset.id),a=order.indexOf(moving),z=order.indexOf(ch.id);order.splice(z,0,order.splice(a,1)[0]);for(let i=0;i<order.length;i++){const {error}=await dragonsSupabase.from('characters').update({sort_order:i+1}).eq('id',order[i]);if(error){showToast('Не удалось сохранить порядок','error');return;}}state.characters.sort((x,y)=>order.indexOf(x.id)-order.indexOf(y.id));loadRaidBoard();});body.appendChild(tr);}}
+// ------------------------------------------------------------
+// ТАБЛИЧКА РЕЙДОВ
+// Таблица строится один раз, дальше только точечно обновляется.
+// Полная перезагрузка (loadRaidBoard) вызывается лишь при реальной
+// смене данных или когда вкладка скрыта и её всё равно никто не видит.
+// ------------------------------------------------------------
+let raidBoardLoaded = false;   // таблица сейчас отрисована
+let raidBoardDirty  = false;   // данные устарели — перерисовать при открытии вкладки
+
+function isRaidBoardVisible() {
+  const view = $('raids-view');
+  return !!view && !view.classList.contains('hidden');
+}
+
+// Аккуратная перерисовка: если вкладка видна — рисуем, иначе помечаем грязной
+function refreshRaidBoard() {
+  if (isRaidBoardVisible()) loadRaidBoard();
+  else { raidBoardLoaded = false; raidBoardDirty = true; }
+}
+
+// Синхронизация таблички с изменениями персонажей (ГС/БС/имя/состав)
+let boardSyncTimer = null;
+function syncRaidBoardWithCharacters() {
+  if (!raidBoardLoaded) { if (isRaidBoardVisible()) loadRaidBoard(); return; }
+  clearTimeout(boardSyncTimer);
+  boardSyncTimer = setTimeout(() => {
+    const body = $('raid-board-body');
+    if (!body || !isRaidBoardVisible()) { raidBoardLoaded = false; raidBoardDirty = true; return; }
+    // Состав строк изменился (добавили/удалили персонажа) — нужна полная перерисовка
+    const rowIds = [...body.querySelectorAll('tr[data-id]')].map(x => x.dataset.id);
+    const charIds = state.characters.map(c => String(c.id));
+    if (rowIds.length !== charIds.length || charIds.some(id => !rowIds.includes(id))) {
+      loadRaidBoard();
+      return;
+    }
+    // Иначе обновляем ячейки на месте — без перезагрузки и дёрганья
+    for (const ch of state.characters) {
+      const tr = body.querySelector('tr[data-id="' + ch.id + '"]');
+      if (!tr) continue;
+      const nameEl = tr.querySelector('.board-character');
+      if (nameEl && nameEl.textContent !== ch.name) nameEl.textContent = ch.name;
+      const cells = [...tr.querySelectorAll('td.progress-cell')];
+      BOARD_KEYS.forEach((key, i) => {
+        const btn = cells[i]?.querySelector('.progress-toggle');
+        if (!btn || btn.matches(':hover,:active')) return; // не мешаем клику
+        updateProgressButton(btn, ch, key);
+      });
+      tr.classList.toggle('all-done', BOARD_KEYS.every(k => doneMarks.get(ch.id + '|' + k) === true));
+    }
+  }, 250);
+}
+
+// Состояние кнопок отметок для персонажа по конкретному рейду
+function progressBtnState(ch, key) {
+  const doneNow = doneMarks.get(ch.id + '|' + key) === true;
+  const isSigned = signedChars.has(ch.id + '|' + key);
+  const can = Number(ch.item_level || 0) >= normalIlvl(key);
+  return {
+    can, doneNow,
+    cls: 'progress-toggle ' + (!can ? 'blocked' : doneNow ? 'done' : isSigned ? 'signed' : 'empty'),
+    text: !can ? '×' : doneNow ? '✓' : isSigned ? '−' : '',
+    title: !can ? 'Недостаточный ГС' : doneNow ? 'Снять отметку' : 'Отметить выполнение',
+  };
+}
+
+function updateProgressButton(btn, ch, key) {
+  const st = progressBtnState(ch, key);
+  btn.className = st.cls;
+  btn.textContent = st.text;
+  btn.title = st.title;
+  btn.disabled = !st.can;
+}
+
+const doneMarks   = new Map(); // character_id|raid_key -> completed
+const signedChars = new Set(); // character_id|raid_key
+
+async function loadRaidBoard() {
+  const body = $('raid-board-body');
+  if (!body || !state.member) return;
+  raidBoardLoaded = true;
+  raidBoardDirty = false;
+  body.innerHTML = '';
+  const ids = state.characters.map(c => c.id);
+  let progress = [];
+  if (ids.length) {
+    const q = await dragonsSupabase.from('character_raid_progress').select('character_id,raid_key,completed').in('character_id', ids);
+    if (q.error) { body.innerHTML = '<tr><td colspan="6">Ошибка загрузки отметок. Проверь RLS таблицы прогресса.</td></tr>'; return; }
+    progress = q.data || [];
+  }
+  doneMarks.clear();
+  for (const p of progress) doneMarks.set(p.character_id + '|' + p.raid_key, p.completed);
+  signedChars.clear();
+  for (const r of state.raids) for (const s of r.signups || []) if (s.member_id === state.member.id && s.week_start === weekStartDate()) signedChars.add(s.character_id + '|' + (r.raid_types?.name));
+
+  const chars = [...state.characters].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  for (const ch of chars) {
+    const tr = document.createElement('tr');
+    tr.draggable = true;
+    tr.dataset.id = ch.id;
+
+    const name = document.createElement('td');
+    name.className = 'board-character';
+    name.textContent = ch.name;
+    tr.appendChild(name);
+
+    const coinCell = document.createElement('td');
+    const coin = document.createElement('button');
+    coin.className = 'coin-toggle' + (ch.gold_coin_active === false ? ' muted' : '');
+    coin.textContent = '◉';
+    coin.title = 'Сбор золота';
+    coin.onclick = async () => {
+      const v = ch.gold_coin_active === false;
+      const { error } = await dragonsSupabase.from('characters').update({ gold_coin_active: v }).eq('id', ch.id);
+      if (error) { showToast('Не удалось сохранить', 'error'); return; }
+      ch.gold_coin_active = v;
+      coin.classList.toggle('muted', !v); // без перезагрузки таблички
+    };
+    coinCell.appendChild(coin);
+    tr.appendChild(coinCell);
+
+    let all = true;
+    for (const key of BOARD_KEYS) {
+      const td = document.createElement('td');
+      td.className = 'progress-cell';
+      const btn = document.createElement('button');
+      updateProgressButton(btn, ch, key);
+      if (doneMarks.get(ch.id + '|' + key) !== true) all = false;
+      btn.onclick = async () => {
+        const nowDone = doneMarks.get(ch.id + '|' + key) === true;
+        const next = !nowDone;
+        // Оптимистично меняем только эту кнопку — табличка не перезагружается
+        doneMarks.set(ch.id + '|' + key, next);
+        updateProgressButton(btn, ch, key);
+        tr.classList.toggle('all-done', BOARD_KEYS.every(k => doneMarks.get(ch.id + '|' + k) === true));
+        const { error } = await dragonsSupabase.from('character_raid_progress')
+          .upsert({ character_id: ch.id, raid_key: key, completed: next, updated_at: new Date().toISOString() }, { onConflict: 'character_id,raid_key' });
+        if (error) {
+          showToast('Не удалось сохранить отметку', 'error');
+          doneMarks.set(ch.id + '|' + key, nowDone); // откат
+          updateProgressButton(btn, ch, key);
+          tr.classList.toggle('all-done', BOARD_KEYS.every(k => doneMarks.get(ch.id + '|' + k) === true));
+        }
+      };
+      td.appendChild(btn);
+      tr.appendChild(td);
+    }
+    if (all) tr.classList.add('all-done');
+
+    tr.addEventListener('dragstart', e => { e.dataTransfer.setData('text/dragon-character', ch.id); tr.classList.add('dragging'); });
+    tr.addEventListener('dragend', () => tr.classList.remove('dragging'));
+    tr.addEventListener('dragover', e => e.preventDefault());
+    tr.addEventListener('drop', async e => {
+      e.preventDefault();
+      const moving = e.dataTransfer.getData('text/dragon-character');
+      if (!moving || moving === ch.id) return;
+      const order = [...body.querySelectorAll('tr[data-id]')].map(x => x.dataset.id);
+      const a = order.indexOf(moving), z = order.indexOf(ch.id);
+      order.splice(z, 0, order.splice(a, 1)[0]);
+      for (let i = 0; i < order.length; i++) {
+        const { error } = await dragonsSupabase.from('characters').update({ sort_order: i + 1 }).eq('id', order[i]);
+        if (error) { showToast('Не удалось сохранить порядок', 'error'); return; }
+      }
+      state.characters.sort((x, y) => order.indexOf(String(x.id)) - order.indexOf(String(y.id)));
+      // Порядок меняем прямо в DOM — без пересоздания строк
+      for (const id of order) body.appendChild(body.querySelector('tr[data-id="' + id + '"]'));
+    });
+    body.appendChild(tr);
+  }
+}
+
 setupTabs();
 
 // ------------------------------------------------------------
