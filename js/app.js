@@ -857,10 +857,13 @@ function buildRaidCard(raid) {
     name.textContent = s.characters?.name || '???';
     row.appendChild(name);
 
-    const ilvl = document.createElement('span');
-    ilvl.className = 'raid-signup-ilvl ' + getGsClass(s.characters?.item_level);
-    ilvl.textContent = s.characters?.item_level ?? '—';
-    row.appendChild(ilvl);
+    // В расписании показываем БС вместо ГС (цвет — по роли класса, как в списке персонажей).
+    const bs = document.createElement('span');
+    const bsRole = s.characters?.classes?.role || s.role || 'DPS';
+    bs.className = 'raid-signup-ilvl ' + (bsRole === 'SUPPORT' ? 'bs-support' : 'bs-dps');
+    bs.title = 'БС';
+    bs.textContent = s.characters?.combat_power ?? '—';
+    row.appendChild(bs);
 
     const canRemoveSignup = s.member_id === state.member.id || state.member.nickname === 'korozii';
     if (canRemoveSignup) {
@@ -904,9 +907,7 @@ function validateSignup(raid, character) {
     return 'Рейд заполнен';
   }
 
-  if (new Date(raid.datetime).getTime() <= Date.now()) {
-    return 'Нельзя записаться на уже прошедший рейд';
-  }
+  // Записываться можно и на уже прошедшие рейды — ограничение снято.
 
   // Ограничение ГС.
   if (characterIlvl < requiredIlvl) {
