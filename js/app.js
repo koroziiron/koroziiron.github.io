@@ -285,17 +285,24 @@ card.draggable = true;  // ← НОВОЕ
   stats.className = 'char-stats';
   const role = ch.classes?.role || ch.role || 'DPS';
   
+  // Пустые значения ГС/БС (null / undefined / '') показываем как пустое поле, а не 0
+  const hasGs = ch.item_level !== null && ch.item_level !== undefined && String(ch.item_level).trim() !== '';
+  const hasBs = ch.combat_power !== null && ch.combat_power !== undefined && String(ch.combat_power).trim() !== '';
+
   // GS
   const gsWrap = document.createElement('span');
   if (state.editMode && !state.draft.deleted.has(ch.id)) {
     const gsInput = document.createElement('input');
     gsInput.type = 'number';
     gsInput.className = 'stat-input';
-    gsInput.value = ch.item_level;
+    gsInput.value = hasGs ? ch.item_level : '';
+    gsInput.placeholder = 'ГС';
     gsInput.step = '0.01';
     gsInput.min = '0';
     gsInput.addEventListener('input', () => {
-      const val = parseFloat(gsInput.value) || 0;
+      const rawGs = gsInput.value.trim();
+      const val = rawGs === '' ? null : parseFloat(rawGs);
+      if (rawGs !== '' && isNaN(val)) return;
       if (isNew) {
         ch.item_level = val;
       } else {
@@ -310,7 +317,7 @@ card.draggable = true;  // ← НОВОЕ
     gsWrap.appendChild(gsInput);
   } else {
     gsWrap.className = getGsClass(ch.item_level);
-    gsWrap.textContent = ch.item_level;
+    gsWrap.textContent = hasGs ? ch.item_level : '';
   }
   
   // BS
@@ -319,10 +326,13 @@ card.draggable = true;  // ← НОВОЕ
     const bsInput = document.createElement('input');
     bsInput.type = 'number';
     bsInput.className = 'stat-input';
-    bsInput.value = ch.combat_power;
+    bsInput.value = hasBs ? ch.combat_power : '';
+    bsInput.placeholder = 'БС';
     bsInput.min = '0';
     bsInput.addEventListener('input', () => {
-      const val = parseInt(bsInput.value) || 0;
+      const rawBs = bsInput.value.trim();
+      const val = rawBs === '' ? null : parseInt(rawBs);
+      if (rawBs !== '' && isNaN(val)) return;
       if (isNew) {
         ch.combat_power = val;
       } else {
@@ -337,7 +347,7 @@ card.draggable = true;  // ← НОВОЕ
     bsWrap.appendChild(bsInput);
   } else {
     bsWrap.className = role === 'SUPPORT' ? 'bs-support' : 'bs-dps';
-    bsWrap.textContent = ch.combat_power;
+    bsWrap.textContent = hasBs ? ch.combat_power : '';
   }
   
   stats.appendChild(gsWrap);
@@ -427,8 +437,8 @@ $('save-btn').addEventListener('click', async () => {
   const inserted = state.draft.inserted.map(c => ({
     name: c.name,
     class_id: c.class_id,
-    item_level: c.item_level || 0,
-    combat_power: c.combat_power || 0,
+    item_level: c.item_level ?? null,
+    combat_power: c.combat_power ?? null,
   }));
   const updated = Object.values(state.draft.updated);
   const deleted = Array.from(state.draft.deleted);
@@ -572,8 +582,8 @@ function createCharacter() {
       role: state.pendingClass.role,
       icon_id: state.pendingClass.icon_id,
     },
-    item_level: 0,
-    combat_power: 0,
+    item_level: null,   // пустые поля ГС/БС у нового персонажа
+    combat_power: null,
   });
   
   closeClassModal();
@@ -732,7 +742,8 @@ function buildRaidCard(raid) {
 
     const ilvl = document.createElement('span');
     ilvl.className = 'raid-signup-ilvl ' + getGsClass(s.characters?.item_level);
-    ilvl.textContent = s.characters?.combat_power ?? 0; ilvl.title = 'Боевая сила';
+    const cp = s.characters?.combat_power;
+    ilvl.textContent = (cp === null || cp === undefined) ? '' : cp; ilvl.title = 'Боевая сила';
     row.appendChild(ilvl);
 
     // Кнопка удаления записи (свои или админ)
@@ -936,7 +947,7 @@ function setupTabs(){const nav=$('dragons-tabs');if(!nav)return;nav.querySelecto
 function normalIlvl(key){const list=state.raidTypes.filter(x=>x.name===key);return Number((list.find(x=>/normal|обыч/i.test(x.mode))||list[0])?.required_ilvl||Infinity);}
 async function loadRaidBoard(){const body=$('raid-board-body');if(!body||!state.member)return;body.innerHTML='';const ids=state.characters.map(c=>c.id);let progress=[];if(ids.length){const q=await dragonsSupabase.from('character_raid_progress').select('character_id,raid_key,completed').in('character_id',ids);if(q.error){body.innerHTML='<tr><td colspan="6">Ошибка загрузки отметок. Проверь RLS таблицы прогресса.</td></tr>';return;}progress=q.data||[];}
 const done=new Map(progress.map(p=>[p.character_id+'|'+p.raid_key,p.completed]));const signed=new Set();for(const r of state.raids)for(const s of r.signups||[])if(s.member_id===state.member.id&&s.week_start===weekStartDate())signed.add(s.character_id+'|'+r.raid_types?.name);
-const chars=[...state.characters].sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));for(const ch of chars){const tr=document.createElement('tr');tr.draggable=true;tr.dataset.id=ch.id;const name=document.createElement('td');name.className='board-character';name.textContent=ch.name;tr.appendChild(name);const coinCell=document.createElement('td');const coin=document.createElement('button');coin.className='coin-toggle'+(ch.gold_coin_active===false?' muted':'');coin.textContent='◉';coin.title='Переключить золотую монетку';coin.onclick=async()=>{const v=ch.gold_coin_active===false;const {error}=await dragonsSupabase.from('characters').update({gold_coin_active:v}).eq('id',ch.id);if(error){showToast('Не удалось сохранить монетку','error');return;}ch.gold_coin_active=v;coin.classList.toggle('muted',!v);};coinCell.appendChild(coin);tr.appendChild(coinCell);let all=true;
+const chars=[...state.characters].sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));for(const ch of chars){const tr=document.createElement('tr');tr.draggable=true;tr.dataset.id=ch.id;const name=document.createElement('td');name.className='board-character';name.textContent=ch.name;tr.appendChild(name);const coinCell=document.createElement('td');const coin=document.createElement('button');coin.className='coin-toggle'+(ch.gold_coin_active===false?' muted':'');coin.textContent='◉';coin.title='Сбор золота';coin.onclick=async()=>{const v=ch.gold_coin_active===false;const {error}=await dragonsSupabase.from('characters').update({gold_coin_active:v}).eq('id',ch.id);if(error){showToast('Не удалось сохранить','error');return;}ch.gold_coin_active=v;coin.classList.toggle('muted',!v);};coinCell.appendChild(coin);tr.appendChild(coinCell);let all=true;
 for(const key of BOARD_KEYS){const td=document.createElement('td');const can=Number(ch.item_level||0)>=normalIlvl(key),doneNow=done.get(ch.id+'|'+key)===true,isSigned=signed.has(ch.id+'|'+key);if(!doneNow)all=false;const btn=document.createElement('button');btn.className='progress-toggle '+(!can?'blocked':doneNow?'done':isSigned?'signed':'empty');btn.textContent=!can?'×':doneNow?'✓':isSigned?'−':'';btn.disabled=!can;btn.title=!can?'Недостаточный ГС':doneNow?'Снять отметку':'Отметить выполнение';btn.onclick=async()=>{const {error}=await dragonsSupabase.from('character_raid_progress').upsert({character_id:ch.id,raid_key:key,completed:!doneNow,updated_at:new Date().toISOString()},{onConflict:'character_id,raid_key'});if(error){showToast('Не удалось сохранить отметку','error');return;}loadRaidBoard();};td.appendChild(btn);tr.appendChild(td);}if(all)tr.classList.add('all-done');
 tr.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/dragon-character',ch.id);tr.classList.add('dragging');});tr.addEventListener('dragend',()=>tr.classList.remove('dragging'));tr.addEventListener('dragover',e=>e.preventDefault());tr.addEventListener('drop',async e=>{e.preventDefault();const moving=e.dataTransfer.getData('text/dragon-character');if(!moving||moving===ch.id)return;const order=[...body.querySelectorAll('tr[data-id]')].map(x=>x.dataset.id),a=order.indexOf(moving),z=order.indexOf(ch.id);order.splice(z,0,order.splice(a,1)[0]);for(let i=0;i<order.length;i++){const {error}=await dragonsSupabase.from('characters').update({sort_order:i+1}).eq('id',order[i]);if(error){showToast('Не удалось сохранить порядок','error');return;}}state.characters.sort((x,y)=>order.indexOf(x.id)-order.indexOf(y.id));loadRaidBoard();});body.appendChild(tr);}}
 setupTabs();
