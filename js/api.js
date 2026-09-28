@@ -60,6 +60,8 @@ export async function getCharacters(memberId) {
       )
     `)
     .eq('member_id', memberId)
+    // тот же порядок, что использует приложение: sort_order, затем по ГС
+    .order('sort_order', { ascending: true, nullsFirst: false })
     .order('item_level', { ascending: false });
 
   if (error) return { error };
