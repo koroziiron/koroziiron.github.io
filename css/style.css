@@ -1268,3 +1268,16 @@ SVG-ГРАДИЕНТЫ (скрытые)
 .weekday-column{position:relative;display:flex;flex-direction:column;flex:0 0 auto;width:240px;max-width:100%;min-width:230px;box-sizing:border-box;overflow:visible}
 .weekday-column .raid-card,.raid-card{position:relative !important;top:auto !important;left:auto !important;right:auto !important;width:100% !important;max-width:100% !important;box-sizing:border-box;margin:0 0 10px 0;flex:0 0 auto}
 .weekday-cards{display:flex;flex-direction:column;gap:10px;width:100%}
+
+/* ============================================================
+   ЗАГЛУШКА «ОБНОВЛЕНИЕ ГС/БС» (пока воркер проверяет сайт статистики)
+   ============================================================ */
+.stat-syncing {
+  color: var(--text-muted, #9a9aa8);
+  font-style: italic;
+  animation: stat-syncing-pulse 1.2s ease-in-out infinite;
+}
+@keyframes stat-syncing-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
