@@ -12,30 +12,8 @@
 const BASE_URL = 'https://лостарк.рф/Оружейная/';
 const PROXY    = 'https://lostark-proxy.iliayay200.workers.dev/?url=';
 
-// НЕ кэшируем результаты между входами!
-// ГС/БС меняются со временем, а кэш на уровне модуля приводил к тому,
-// что после первого входа все последующие синхронизации использовали
-// устаревшие значения и изменения не сохранялись в базу.
-// Дедупликация параллельных запросов — через in-flight карту ниже.
-const inFlight = new Map(); // name -> Promise
-
-function fetchOnce(name) {
-  if (!inFlight.has(name)) {
-    const p = fetchCharacterStats(name).finally(() => inFlight.delete(name));
-    inFlight.set(name, p);
-  }
-  return inFlight.get(name);
-}
-
-// ------------------------------------------------------------
-// Нормализация имени персонажа для сравнения с БД.
-// На лостарк.рф имена могут писаться с пробелами («Эроманга Сэнсэй»),
-// а в базе храниться слитно («ЭромангаСэнсэй») — сравниваем «по-лояльно»:
-// без пробелов и регистра.
-// ------------------------------------------------------------
-export function normalizeName(name) {
-  return String(name || '').replace(/[\s\u00A0]+/g, '').toLowerCase();
-}
+// Кэш последних результатов на время сессии: name -> { gearValue, combatValue }
+const statsCache = new Map();
 
 // ------------------------------------------------------------
 // Запрос + парсинг одного персонажа (как в тестовом скрипте)
@@ -145,7 +123,12 @@ export async function refreshCharactersStats(characters, onPersist) {
   if (alive.length === 0) return { changed: [], errors: [] };
 
   const results = await Promise.allSettled(
-    alive.map(ch => fetchOnce(ch.name))
+    alive.map(async ch => {
+      if (statsCache.has(ch.name)) return statsCache.get(ch.name);
+      const s = await fetchCharacterStats(ch.name);
+      if (s) statsCache.set(ch.name, s);
+      return s;
+    })
   );
 
   const changed = [];
@@ -176,11 +159,8 @@ export async function refreshCharactersStats(characters, onPersist) {
       dirty = true;
     }
 
-    // БС: в Supabase колонка combat_power — bigint (целое).
-    // Дробную часть с сайта округляем, иначе PATCH падает с 400
-    // («invalid input syntax for type bigint: "1212.24"») и вся пачка
-    // изменений не сохраняется.
-    const newBs = Math.roundOrNull(parseNum(s.combatValue));
+    // БС
+    const newBs = parseNum(s.combatValue);
     if (newBs !== null && newBs !== parseNum(ch.combat_power)) {
       patch.combat_power = newBs;
       dirty = true;
@@ -194,16 +174,12 @@ export async function refreshCharactersStats(characters, onPersist) {
     }
   });
 
-  // Сохраняем изменения в базу (через колбэк, чтобы не тащить сюда api.js).
-  // Каждого персонажа пушим отдельно: если одна запись отклонится
-  // (например, RLS или тип данных), остальные всё равно сохранятся.
+  // Сохраняем изменения в базу (через колбэк, чтобы не тащить сюда api.js)
   if (changed.length > 0 && typeof onPersist === 'function') {
-    for (const p of changed) {
-      try {
-        await onPersist([p]);
-      } catch (e) {
-        console.error('[stats persist error]', p.id, e);
-      }
+    try {
+      await onPersist(changed);
+    } catch (e) {
+      console.error('[stats persist error]', e);
     }
   }
 
