@@ -60,12 +60,54 @@ export async function fetchCharacterStats(name) {
 }
 
 // ------------------------------------------------------------
-// "1 745,42" / "Ур.1745.42" -> number | null
+// Разбор чисел со страницы статистики -> number | null
+// Форматы на сайте:
+//   "1,212.24"  — запятая разделяет тысячи, точка — десятичный разделитель
+//                 (в DOM дробная часть лежит в <small>, после textContent
+//                  склеивается в "...,xxx.yy")
+//   "6013"      — целое без разделителей
+//   "1 745,42" / "Ур.1745.42" — варианты из ручного ввода / старых данных
 // ------------------------------------------------------------
-function parseNum(str) {
+export function parseNum(str) {
   if (str === null || str === undefined) return null;
-  const cleaned = String(str).replace(/[\s\u00A0]/g, '').replace(',', '.');
-  const n = parseFloat(cleaned);
+
+  let s = String(str)
+    .replace(/[\s\u00A0]/g, '')   // убираем пробелы (в т.ч. неразрывные)
+    .replace(/^Ур\.?/i, '');      // убираем префикс "Ур."
+
+  // Две точки подряд ("1.740..00") — артефакт склейки span+small:
+  // первая точка — разделитель тысяч, вторая — десятичная.
+  // Убираем именно первую из пары: "1.740..00" -> "1740.00" -> 1740
+  s = s.replace(/(\d)\.\.(?=\d)/, '$1.');
+
+  const dotCount = (s.match(/\./g) || []).length;
+  const commaCount = (s.match(/,/g) || []).length;
+
+  if (dotCount > 1 && commaCount === 0) {
+    // Несколько точек без запятых ("1.740.00") — все, кроме последней,
+    // это разделители тысяч
+    const lastDot = s.lastIndexOf('.');
+    s = s.slice(0, lastDot).replace(/\./g, '') + s.slice(lastDot);
+  } else if (dotCount > 0 && commaCount > 0) {
+    // Оба разделителя: тот, что правее — десятичный, остальные — тысячи
+    if (s.lastIndexOf('.') > s.lastIndexOf(',')) {
+      s = s.replace(/,/g, '');            // "1,212.24" -> "1212.24"
+    } else {
+      s = s.replace(/\./g, '').replace(',', '.'); // "1.212,24" -> "1212.24"
+    }
+  } else if (commaCount === 1) {
+    // Только запятая: если после неё ровно 3 цифры и есть цифры до —
+    // это разделитель тысяч ("1,212"), иначе десятичный ("1745,42")
+    s = s.replace(/,/g, (match, offset) => {
+      const after = s.slice(offset + 1);
+      return /^\d{3}$/.test(after) ? '' : '.';
+    });
+  } else if (commaCount > 1) {
+    s = s.replace(/,/g, '');              // "1,212,240" -> "1212240"
+  }
+  // одна точка или ни одного разделителя — оставляем как есть
+
+  const n = parseFloat(s);
   return Number.isFinite(n) ? n : null;
 }
 
