@@ -3,6 +3,7 @@
 // ============================================================
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { SUPABASE_URL, SUPABASE_KEY, ACCESS_KEY_SALT } from '../supabase-config.js';
+import { toNumeric, toInteger } from './stats.js';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -102,9 +103,11 @@ export async function saveChanges(memberId, { inserted, updated, deleted }) {
   // 2. Обновление
   for (const ch of updated) {
     const patch = { updated_at: new Date().toISOString() };
-    if ('item_level' in ch) patch.item_level = ch.item_level;
-    if ('combat_power' in ch) patch.combat_power = ch.combat_power;
-    if ('sort_order' in ch) patch.sort_order = ch.sort_order;
+    // ГС — numeric, БС — int8: приводим значения к типам колонок,
+    // иначе PostgREST отвечает 400 Bad Request и изменения не сохраняются
+    if ('item_level' in ch) patch.item_level = toNumeric(ch.item_level);
+    if ('combat_power' in ch) patch.combat_power = toInteger(ch.combat_power);
+    if ('sort_order' in ch) patch.sort_order = ch.sort_order === null ? null : toInteger(ch.sort_order);
     const { error } = await supabase
       .from('characters')
       .update(patch)
@@ -118,8 +121,8 @@ export async function saveChanges(memberId, { inserted, updated, deleted }) {
       member_id: memberId,
       name: ch.name,
       class_id: ch.class_id,
-      item_level: ch.item_level,
-      combat_power: ch.combat_power,
+      item_level: toNumeric(ch.item_level),
+      combat_power: toInteger(ch.combat_power),
       sort_order: ch.sort_order ?? null,
     }));
 

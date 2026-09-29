@@ -15,7 +15,7 @@ import {
   getRaidTypes,
   supabase as dragonsSupabase,
 } from './api.js';
-import { refreshCharactersStats } from './stats.js';
+import { refreshCharactersStats, toNumeric, toInteger } from './stats.js';
 window.dragonsSupabase = dragonsSupabase;
 
 // ------------------------------------------------------------
@@ -398,8 +398,9 @@ card.draggable = true;  // ← НОВОЕ
     gsInput.min = '0';
     gsInput.addEventListener('input', () => {
       const rawGs = gsInput.value.trim();
-      const val = rawGs === '' ? null : parseFloat(rawGs);
-      if (rawGs !== '' && isNaN(val)) return;
+      // ГС — колонка numeric: допускаем дробное (1745.42)
+      const val = rawGs === '' ? null : toNumeric(parseFloat(rawGs));
+      if (rawGs !== '' && val === null) return;
       if (isNew) {
         ch.item_level = val;
       } else {
@@ -432,8 +433,10 @@ card.draggable = true;  // ← НОВОЕ
     bsInput.min = '0';
     bsInput.addEventListener('input', () => {
       const rawBs = bsInput.value.trim();
-      const val = rawBs === '' ? null : parseInt(rawBs);
-      if (rawBs !== '' && isNaN(val)) return;
+      // БС — колонка int8: только целое (дробное округляем),
+      // иначе Supabase ответит 400 Bad Request на весь PATCH
+      const val = rawBs === '' ? null : toInteger(parseFloat(rawBs));
+      if (rawBs !== '' && val === null) return;
       if (isNew) {
         ch.combat_power = val;
       } else {
