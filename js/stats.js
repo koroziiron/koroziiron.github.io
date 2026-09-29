@@ -8,6 +8,14 @@
 //   - запрос идёт для каждого персонажа игрока;
 //   - значения сравниваются с текущими в state;
 //   - при изменении — обновляются в панели «Мои персонажи» и сохраняются в Supabase.
+//
+// ВАЖНО ПРО ТИПЫ В БАЗЕ:
+//   characters.item_level   — numeric (дробное, ГС вроде 1745.42)
+//   characters.combat_power — int8/bigint (целое, БС вроде 6013)
+// Если отправить в combat_power дробное число, PostgREST вернёт
+// «400 Bad Request» (invalid input syntax for integer) и весь PATCH
+// не применится. Поэтому перед отправкой ГС нормализуем через Number,
+// а БС — строго через Math.round до целого.
 
 const BASE_URL = 'https://лостарк.рф/Оружейная/';
 const PROXY    = 'https://lostark-proxy.iliayay200.workers.dev/?url=';
@@ -112,6 +120,23 @@ export function parseNum(str) {
 }
 
 // ------------------------------------------------------------
+// Приведение значений к типам колонкам в БД:
+//   ГС (item_level)   -> numeric: обычное число, дробная часть допустима
+//   БС (combat_power) -> int8:    строго целое (округляем), иначе PostgREST
+//                                 отдаст 400 Bad Request на весь PATCH
+// ------------------------------------------------------------
+export function toNumeric(val) {
+  if (val === null || val === undefined || String(val).trim() === '') return null;
+  const n = typeof val === 'number' ? val : parseNum(val);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function toInteger(val) {
+  const n = toNumeric(val);
+  return n === null ? null : Math.round(n);
+}
+
+// ------------------------------------------------------------
 // Обновить ГС/БС всех персонажей через воркер.
 //   characters — массив из state.characters
 //   onPersist(item_level|combat_power changes) — вызывается,
@@ -152,16 +177,16 @@ export async function refreshCharactersStats(characters, onPersist) {
     const patch = { id: ch.id };
     let dirty = false;
 
-    // ГС
-    const newGs = parseNum(s.gearValue);
-    if (newGs !== null && newGs !== parseNum(ch.item_level)) {
+    // ГС — колонка numeric: число с дробной частью допустимо
+    const newGs = toNumeric(parseNum(s.gearValue));
+    if (newGs !== null && newGs !== toNumeric(ch.item_level)) {
       patch.item_level = newGs;
       dirty = true;
     }
 
-    // БС
-    const newBs = parseNum(s.combatValue);
-    if (newBs !== null && newBs !== parseNum(ch.combat_power)) {
+    // БС — колонка int8: только целое, иначе PATCH вернёт 400 Bad Request
+    const newBs = toInteger(parseNum(s.combatValue));
+    if (newBs !== null && newBs !== toInteger(ch.combat_power)) {
       patch.combat_power = newBs;
       dirty = true;
     }
