@@ -775,7 +775,9 @@ function buildRaidCard(raid) {
     row.appendChild(name);
 
     const ilvl = document.createElement('span');
-    ilvl.className = 'raid-signup-ilvl ' + getGsClass(s.characters?.item_level);
+    // В расписании показываем БС — окрашиваем его по цвету БС (как в «Мои персонажи»), а не по ГС
+    const role = s.characters?.classes?.role || s.characters?.role || 'DPS';
+    ilvl.className = 'raid-signup-ilvl ' + (role === 'SUPPORT' ? 'bs-support' : 'bs-dps');
     const cp = s.characters?.combat_power;
     ilvl.textContent = (cp === null || cp === undefined) ? '' : cp; ilvl.title = 'Боевая сила';
     row.appendChild(ilvl);
