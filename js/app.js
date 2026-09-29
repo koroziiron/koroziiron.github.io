@@ -15,6 +15,7 @@ import {
   getRaidTypes,
   supabase as dragonsSupabase,
 } from './api.js';
+import { refreshCharactersStats } from './stats.js';
 window.dragonsSupabase = dragonsSupabase;
 
 // ------------------------------------------------------------
@@ -153,9 +154,67 @@ async function enterMain() {
   }
 
   await loadCharacters();
+
+  // НОВОЕ: перед показом персонажей запрашиваем ГС и БС каждого через
+  // воркер-прокси (страница «Оружейная» на сайте статистики).
+  // Панельку пока не трогаем — чтобы человек не видел старых значений.
+  // Если воркер недоступен/ничего не вернул — просто молча оставляем то,
+  // что лежит в базе (showToast только при частичных ошибках внутри).
+  await syncStatsFromWorker();
+
   await loadRaids();
-  renderCharacters();
+  renderCharacters({ fresh: true });
   renderSchedule();
+}
+
+// ------------------------------------------------------------
+// СИНХРОНИЗАЦИЯ ГС/БС ЧЕРЕЗ WORKER-ПРОКСИ
+//   1. для каждого персонажа запрашиваем страницу «Оружейная» через воркер;
+//   2. спарсенные ГС/БС сравниваем с текущими — при изменении обновляем
+//      объекты в state (панелька «Мои персонажи» перерисуется);
+//   3. изменения пушем в Supabase (saveChanges → updated).
+// Ошибки не блокируют вход: показываем то, что есть в базе.
+// ------------------------------------------------------------
+let statsSyncing = false;
+
+async function syncStatsFromWorker() {
+  if (!state.member || state.characters.length === 0) return;
+  if (statsSyncing) return;
+  statsSyncing = true;
+  try {
+    const { changed, errors } = await refreshCharactersStats(
+      state.characters,
+      async (patches) => {
+        // Сохраняем новые ГС/БС в базу одним вызовом
+        const r = await saveChanges(state.member.id, {
+          inserted: [],
+          updated: patches,
+          deleted: [],
+        });
+        if (r.error) console.error('[stats] persist failed', r.error);
+      }
+    );
+
+    if (changed.length > 0) {
+      showToast(`ГС/БС обновлены: ${changed.length} шт.`, 'success');
+      // значения уже применены к state.characters — панелька и табличка
+      // перерисуются сразу после возврата из syncStatsFromWorker в enterMain;
+      // здесь подстраховываемся на случай вызова не из входа
+      renderCharacters();
+      syncRaidBoardWithCharacters();
+    } else if (errors.length === errorsTotal(state.characters)) {
+      // вообще ничего не удалось получить — тихо оставляем значения из БД
+      console.warn('[stats] worker returned nothing usable');
+    } else if (errors.length > 0) {
+      showToast(`Не удалось обновить ГС/БС: ${errors.map(e => e.name).join(', ')}`, 'error');
+    }
+  } finally {
+    statsSyncing = false;
+  }
+}
+
+function errorsTotal(characters) {
+  return characters.filter(c => c.name && !String(c.id).startsWith('temp_')).length;
 }
 
 // ------------------------------------------------------------
@@ -230,16 +289,17 @@ function maxSortOrder() {
 // ------------------------------------------------------------
 // РЕНДЕР СПИСКА ПЕРСОНАЖЕЙ
 // ------------------------------------------------------------
-function renderCharacters() {
+function renderCharacters(opts = {}) {
+  const syncingStats = opts.syncingStats === true;
   const list = $('characters-list');
   list.innerHTML = '';
   // Существующие персонажи — в том же порядке, что и в табличке рейдов
   for (const ch of sortedCharacters()) {
-    list.appendChild(buildCharCard(ch, false));
+    list.appendChild(buildCharCard(ch, false, syncingStats));
   }
   // Локально созданные (ещё не в БД)
   for (const ch of state.draft.inserted) {
-    list.appendChild(buildCharCard(ch, true));
+    list.appendChild(buildCharCard(ch, true, syncingStats));
   }
   // Кнопка "+" в режиме редактирования
   const addBtn = $('add-character-btn');
@@ -256,7 +316,7 @@ function renderCharacters() {
 // ------------------------------------------------------------
 // ПОСТРОЕНИЕ КАРТОЧКИ ПЕРСОНАЖА
 // ------------------------------------------------------------
-function buildCharCard(ch, isNew) {
+function buildCharCard(ch, isNew, syncingStats = false) {
   const card = document.createElement('div');
   card.className = 'char-card';
   card.dataset.charId = ch.id;
@@ -323,7 +383,12 @@ card.draggable = true;  // ← НОВОЕ
 
   // GS
   const gsWrap = document.createElement('span');
-  if (state.editMode && !state.draft.deleted.has(ch.id)) {
+  if (syncingStats && !isNew) {
+    // Пока воркер проверяет значения на сайте статистики — заглушка
+    gsWrap.className = 'stat-syncing';
+    gsWrap.textContent = '…';
+    gsWrap.title = 'Обновление ГС через сайт статистики';
+  } else if (state.editMode && !state.draft.deleted.has(ch.id)) {
     const gsInput = document.createElement('input');
     gsInput.type = 'number';
     gsInput.className = 'stat-input';
@@ -354,7 +419,11 @@ card.draggable = true;  // ← НОВОЕ
   
   // BS
   const bsWrap = document.createElement('span');
-  if (state.editMode && !state.draft.deleted.has(ch.id)) {
+  if (syncingStats && !isNew) {
+    bsWrap.className = 'stat-syncing';
+    bsWrap.textContent = '…';
+    bsWrap.title = 'Обновление БС через сайт статистики';
+  } else if (state.editMode && !state.draft.deleted.has(ch.id)) {
     const bsInput = document.createElement('input');
     bsInput.type = 'number';
     bsInput.className = 'stat-input';
