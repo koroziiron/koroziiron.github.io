@@ -504,6 +504,26 @@ SVG-ГРАДИЕНТЫ (скрытые)
   text-overflow: ellipsis;
 }
 
+/* Поле ввода имени персонажа в режиме редактирования */
+.char-name-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-family: var(--font-body);
+  outline: none;
+  transition: border-color 0.2s;
+  width: 100%;
+  max-width: 220px;
+}
+.char-name-input:focus {
+  border-color: var(--gold);
+}
+.char-name-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+
 /* === ПРАВКА 2: Шрифт GS/BS — крупнее и читаемее === */
 .char-stats {
   display: flex;
