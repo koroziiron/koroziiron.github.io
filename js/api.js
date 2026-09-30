@@ -170,12 +170,25 @@ export async function ping() {
 // ------------------------------------------------------------
 // Получить все рейды в диапазоне дат (с записями и классами персонажей)
 // ------------------------------------------------------------
-export async function getRaidsInRange(){const {data,error}=await supabase.from('raids').select('id,weekday,start_time,datetime,max_players,status,created_by,raid_type_id,raid_types(id,name,mode,size,required_ilvl,icon_id),signups(id,character_id,member_id,role,week_start,raid_key,characters(id,name,item_level,combat_power,class_id,classes(id,name,role,icon_id)))').order('weekday').order('start_time');if(error)return {error};return {raids:data||[]};}
+export async function getRaidsInRange(){const {data,error}=await supabase.from('raids').select('id,weekday,start_time,max_players,status,created_by,raid_type_id,raid_types(id,name,mode,size,required_ilvl,icon_id),signups(id,character_id,member_id,role,characters(id,name,item_level,combat_power,class_id,classes(id,name,role,icon_id)))').order('weekday').order('start_time');if(error)return {error};return {raids:data||[]};}
 
 // ------------------------------------------------------------
 // Создать рейд
 // ------------------------------------------------------------
 export async function createRaid({raid_type_id,weekday,start_time,max_players,created_by}){const {data,error}=await supabase.from('raids').insert({raid_type_id,weekday,start_time,max_players,status:'open',created_by}).select().single();if(error)return {error};return {raid:data};}
+
+
+export async function updateRaid(raidId, { raid_type_id, weekday, max_players }) {
+  const { data, error } = await supabase
+    .from('raids')
+    .update({ raid_type_id, weekday, max_players })
+    .eq('id', raidId)
+    .select('id,weekday,raid_type_id')
+    .single();
+
+  if (error) return { error };
+  return { raid: data };
+}
 
 // ------------------------------------------------------------
 // Удалить рейд
@@ -193,7 +206,7 @@ export async function deleteRaid(raidId) {
 // ------------------------------------------------------------
 // Записать персонажа на рейд
 // ------------------------------------------------------------
-export async function signup({ raid_id, character_id, member_id, role, week_start, raid_key }) {
+export async function signup({ raid_id, character_id, member_id, role }) {
   const { data, error } = await supabase
     .from('signups')
     .insert({
@@ -201,8 +214,6 @@ export async function signup({ raid_id, character_id, member_id, role, week_star
       character_id,
       member_id,
       role,
-      week_start,
-      raid_key,
     })
     .select()
     .single();

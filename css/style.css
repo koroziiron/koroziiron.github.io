@@ -1301,3 +1301,48 @@ SVG-ГРАДИЕНТЫ (скрытые)
   0%, 100% { opacity: 0.45; }
   50%      { opacity: 1; }
 }
+
+
+/* Семь компактных круглых кнопок выбора дня рейда */
+.weekday-picker {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 7px;
+  margin: 12px 0 18px;
+}
+.weekday-choice {
+  aspect-ratio: 1;
+  min-width: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font: 600 12px var(--font-body);
+  cursor: pointer;
+  transition: color .16s, background .16s, border-color .16s, transform .16s;
+}
+.weekday-choice:hover {
+  color: var(--gold-hi);
+  border-color: var(--gold);
+  transform: translateY(-1px);
+}
+.weekday-choice.active {
+  color: #0a0a0d;
+  background: linear-gradient(180deg, #e1bd62, #a47b26);
+  border-color: var(--gold-hi);
+  box-shadow: 0 0 0 2px rgba(201,160,60,.15);
+}
+.raid-card-title-editable {
+  cursor: pointer;
+  transition: color .16s, opacity .16s;
+}
+.raid-card-title-editable:hover,
+.raid-card-title-editable:focus-visible {
+  color: var(--text-muted);
+  opacity: .55;
+  outline: none;
+}
+@media (max-width: 420px) {
+  .weekday-picker { gap: 4px; }
+  .weekday-choice { font-size: 10px; }
+}

@@ -331,14 +331,13 @@
       <div id="raid-mode-grid" class="raid-mode-grid"></div>
     </div>
 
-    <!-- Шаг 3: дата и время -->
+    <!-- Шаг 3: день и время -->
     <div id="raid-step-3" class="modal-step">
       <h3 class="modal-title" id="raid-mode-title">—</h3>
       <p class="raid-ilvl-hint">Требуемый ГС: <span id="raid-required-ilvl">—</span></p>
-      <div class="raid-datetime-row">
-        <select id="raid-weekday-input" class="raid-date-input"><option value="3">Среда</option><option value="4">Четверг</option><option value="5">Пятница</option><option value="6">Суббота</option><option value="7">Воскресенье</option><option value="1">Понедельник</option><option value="2">Вторник</option></select>
-        <input type="time" id="raid-time-input" class="raid-time-input">
-      </div>
+      <div class="raid-picker-label">День недели</div>
+      <div id="raid-weekday-picker" class="weekday-picker" role="group" aria-label="День рейда"></div>
+      <div id="raid-time-row" class="raid-datetime-row"><input type="time" id="raid-time-input" class="raid-time-input" value="20:00"></div>
       <button id="raid-create-btn" class="raid-create-btn">Создать рейд</button>
     </div>
   </div>
