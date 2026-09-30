@@ -15,7 +15,7 @@ import {
   getRaidTypes,
   supabase as dragonsSupabase,
 } from './api.js';
-import { refreshCharactersStats, toNumeric, toInteger } from './stats.js';
+import { refreshCharactersStats } from './stats.js';
 window.dragonsSupabase = dragonsSupabase;
 
 // ------------------------------------------------------------
@@ -369,91 +369,70 @@ card.draggable = true;  // ← НОВОЕ
   // Информация
   const info = document.createElement('div');
   info.className = 'char-info';
-  const nameEl = document.createElement('div');
-  nameEl.className = 'char-name';
-  nameEl.textContent = ch.name;
-  
+
+  // ИМЯ: в режиме редактирования — поле ввода (менять можно только его),
+  // в обычном режиме — обычный текст. ГС/БС вручную менять нельзя:
+  // они обновляются только автоматически через сайт статистики.
+  let nameEl;
+  if (state.editMode && !state.draft.deleted.has(ch.id)) {
+    nameEl = document.createElement('input');
+    nameEl.type = 'text';
+    nameEl.className = 'char-name char-name-input';
+    nameEl.value = ch.name || '';
+    nameEl.placeholder = 'Имя персонажа';
+    nameEl.maxLength = 30;
+    // при набранном имени drag-перетаскивание карточки мешает выделению текста
+    nameEl.addEventListener('mousedown', e => e.stopPropagation());
+    nameEl.addEventListener('click', e => e.stopPropagation());
+    nameEl.addEventListener('input', () => {
+      const newName = nameEl.value.trim();
+      if (isNew) {
+        ch.name = newName;
+      } else {
+        state.draft.updated[ch.id] = state.draft.updated[ch.id] || {
+          id: ch.id,
+          name: ch.name,
+        };
+        state.draft.updated[ch.id].name = newName;
+      }
+    });
+  } else {
+    nameEl = document.createElement('div');
+    nameEl.className = 'char-name';
+    nameEl.textContent = ch.name;
+  }
+
   const stats = document.createElement('div');
   stats.className = 'char-stats';
   const role = ch.classes?.role || ch.role || 'DPS';
-  
+
   // Пустые значения ГС/БС (null / undefined / '') показываем как пустое поле, а не 0
   const hasGs = ch.item_level !== null && ch.item_level !== undefined && String(ch.item_level).trim() !== '';
   const hasBs = ch.combat_power !== null && ch.combat_power !== undefined && String(ch.combat_power).trim() !== '';
 
-  // GS
+  // GS (только для чтения)
   const gsWrap = document.createElement('span');
   if (syncingStats && !isNew) {
     // Пока воркер проверяет значения на сайте статистики — заглушка
     gsWrap.className = 'stat-syncing';
     gsWrap.textContent = '…';
     gsWrap.title = 'Обновление ГС через сайт статистики';
-  } else if (state.editMode && !state.draft.deleted.has(ch.id)) {
-    const gsInput = document.createElement('input');
-    gsInput.type = 'number';
-    gsInput.className = 'stat-input';
-    gsInput.value = hasGs ? ch.item_level : '';
-    gsInput.placeholder = 'ГС';
-    gsInput.step = '0.01';
-    gsInput.min = '0';
-    gsInput.addEventListener('input', () => {
-      const rawGs = gsInput.value.trim();
-      // ГС — колонка numeric: допускаем дробное (1745.42)
-      const val = rawGs === '' ? null : toNumeric(parseFloat(rawGs));
-      if (rawGs !== '' && val === null) return;
-      if (isNew) {
-        ch.item_level = val;
-      } else {
-        state.draft.updated[ch.id] = state.draft.updated[ch.id] || {
-          id: ch.id,
-          item_level: ch.item_level,
-          combat_power: ch.combat_power,
-        };
-        state.draft.updated[ch.id].item_level = val;
-      }
-    });
-    gsWrap.appendChild(gsInput);
   } else {
     gsWrap.className = getGsClass(ch.item_level);
     gsWrap.textContent = hasGs ? ch.item_level : '';
   }
-  
-  // BS
+
+  // BS (только для чтения)
   const bsWrap = document.createElement('span');
   if (syncingStats && !isNew) {
     bsWrap.className = 'stat-syncing';
     bsWrap.textContent = '…';
     bsWrap.title = 'Обновление БС через сайт статистики';
-  } else if (state.editMode && !state.draft.deleted.has(ch.id)) {
-    const bsInput = document.createElement('input');
-    bsInput.type = 'number';
-    bsInput.className = 'stat-input';
-    bsInput.value = hasBs ? ch.combat_power : '';
-    bsInput.placeholder = 'БС';
-    bsInput.min = '0';
-    bsInput.addEventListener('input', () => {
-      const rawBs = bsInput.value.trim();
-      // БС — колонка int8: только целое (дробное округляем),
-      // иначе Supabase ответит 400 Bad Request на весь PATCH
-      const val = rawBs === '' ? null : toInteger(parseFloat(rawBs));
-      if (rawBs !== '' && val === null) return;
-      if (isNew) {
-        ch.combat_power = val;
-      } else {
-        state.draft.updated[ch.id] = state.draft.updated[ch.id] || {
-          id: ch.id,
-          item_level: ch.item_level,
-          combat_power: ch.combat_power,
-        };
-        state.draft.updated[ch.id].combat_power = val;
-      }
-    });
-    bsWrap.appendChild(bsInput);
   } else {
     bsWrap.className = role === 'SUPPORT' ? 'bs-support' : 'bs-dps';
     bsWrap.textContent = hasBs ? ch.combat_power : '';
   }
-  
+
   stats.appendChild(gsWrap);
   stats.appendChild(bsWrap);
   info.appendChild(nameEl);
@@ -538,11 +517,36 @@ $('cancel-btn').addEventListener('click', () => {
 // КНОПКА СОХРАНЕНИЯ
 // ------------------------------------------------------------
 $('save-btn').addEventListener('click', async () => {
+  // Проверка имён: пустые и дубликаты не сохраняем
+  const nameErrors = [];
+  for (const c of state.draft.inserted) {
+    if (!c.name || !c.name.trim()) nameErrors.push('(пустое имя)');
+  }
+  for (const ch of state.characters) {
+    if (state.draft.deleted.has(ch.id)) continue;
+    const upd = state.draft.updated[ch.id];
+    if (upd && 'name' in upd) {
+      const newName = String(upd.name || '').trim();
+      if (!newName) {
+        nameErrors.push(ch.name);
+        continue;
+      }
+      const dupeDb = state.characters.some(o =>
+        o.id !== ch.id && !state.draft.deleted.has(o.id) && o.name === newName);
+      const dupeNew = state.draft.inserted.some(c => c.name === newName);
+      if (dupeDb || dupeNew) nameErrors.push(newName);
+    }
+  }
+  if (nameErrors.length > 0) {
+    showToast(`Имя пусто или уже занято: ${nameErrors.join(', ')}`, 'error');
+    return;
+  }
+
   const inserted = state.draft.inserted.map((c, i) => ({
     name: c.name,
     class_id: c.class_id,
-    item_level: c.item_level ?? null,
-    combat_power: c.combat_power ?? null,
+    item_level: 0,   // у нового персонажа ГС и БС = 0 (обновляются автоматически)
+    combat_power: 0,
     sort_order: (maxSortOrder() + 1 + i), // новые — в конец списка
   }));
   const updated = Object.values(state.draft.updated);
@@ -688,8 +692,8 @@ function createCharacter() {
       role: state.pendingClass.role,
       icon_id: state.pendingClass.icon_id,
     },
-    item_level: null,   // пустые поля ГС/БС у нового персонажа
-    combat_power: null,
+    item_level: 0,   // у нового персонажа ГС = 0 (обновляется автоматически)
+    combat_power: 0, // и БС = 0 (обновляется автоматически)
   });
   
   closeClassModal();

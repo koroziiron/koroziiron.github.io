@@ -84,8 +84,9 @@ export async function getClasses() {
 
 // ------------------------------------------------------------
 // Сохранение изменений одним батчем:
-//   - inserted: [{ name, class_id, item_level, combat_power }]
-//   - updated:  [{ id, item_level, combat_power }]
+//   - inserted: [{ name, class_id }]  (ГС и БС у новых = 0)
+//   - updated:  [{ id, name }]        (в ручном режиме меняется только имя)
+//                 + служебные поля от автосинхронизации: item_level / combat_power / sort_order
 //   - deleted:  [id, id, ...]
 // ------------------------------------------------------------
 export async function saveChanges(memberId, { inserted, updated, deleted }) {
@@ -103,8 +104,18 @@ export async function saveChanges(memberId, { inserted, updated, deleted }) {
   // 2. Обновление
   for (const ch of updated) {
     const patch = { updated_at: new Date().toISOString() };
+    // Имя персонажа (меняется в режиме редактирования)
+    if ('name' in ch) {
+      const newName = String(ch.name ?? '').trim();
+      if (!newName) {
+        errors.push({ op: 'update', id: ch.id, error: new Error('Пустое имя персонажа') });
+        continue;
+      }
+      patch.name = newName;
+    }
     // ГС — numeric, БС — int8: приводим значения к типам колонок,
     // иначе PostgREST отвечает 400 Bad Request и изменения не сохраняются
+    // (эти поля приходят только из автосинхронизации со статистикой)
     if ('item_level' in ch) patch.item_level = toNumeric(ch.item_level);
     if ('combat_power' in ch) patch.combat_power = toInteger(ch.combat_power);
     if ('sort_order' in ch) patch.sort_order = ch.sort_order === null ? null : toInteger(ch.sort_order);
@@ -121,8 +132,8 @@ export async function saveChanges(memberId, { inserted, updated, deleted }) {
       member_id: memberId,
       name: ch.name,
       class_id: ch.class_id,
-      item_level: toNumeric(ch.item_level),
-      combat_power: toInteger(ch.combat_power),
+      item_level: 0,     // у нового персонажа ГС = 0
+      combat_power: 0,   // и БС = 0 (обновляются автоматически)
       sort_order: ch.sort_order ?? null,
     }));
 
