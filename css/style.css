@@ -1118,6 +1118,21 @@ SVG-ГРАДИЕНТЫ (скрытые)
   background: rgba(201, 160, 60, 0.1);
 }
 
+/* Свои персонажи в расписании — тёмно-золотистая строка */
+.raid-signup-row.mine .raid-signup-icon {
+  fill: #a8842e;
+}
+.raid-signup-row.mine .raid-signup-name {
+  color: #a8842e;
+}
+.raid-signup-row.mine .raid-signup-ilvl.bs-support,
+.raid-signup-row.mine .raid-signup-ilvl.bs-dps {
+  background: linear-gradient(180deg, #c9a03c, #a8842e);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 4px rgba(201, 160, 60, 0.4));
+}
+
 .raid-signup-icon {
   width: 16px;
   height: 16px;
