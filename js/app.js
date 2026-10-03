@@ -81,28 +81,6 @@ function showToast(text, type = '') {
 // ------------------------------------------------------------
 async function init() {
   showScreen('loading');
-
-  // Справочник типов рейдов нужен для публичного расписания ещё до авторизации.
-  if (state.raidTypes.length === 0) {
-    const r = await getRaidTypes();
-    if (r.raidTypes) state.raidTypes = r.raidTypes;
-  }
-
-  // Расписание — публичные данные: загружаем без авторизации и показываем
-  // на экране входа (#login-schedule-timeline). Ошибки не должны ломать вход.
-  let scheduleLoaded = false;
-  try {
-    await loadRaids();
-    scheduleLoaded = true;
-  } catch (e) {
-    console.error('[schedule] preload failed', e);
-  }
-  try {
-    renderSchedule();
-  } catch (e) {
-    console.error('[schedule] render failed', e);
-  }
-
   // Проверяем доступность сервера
   const ok = await ping();
   if (!ok) {
@@ -120,28 +98,63 @@ async function init() {
       localStorage.removeItem('kp_member');
     }
   }
-  // Если предзагрузка упала, пробуем ещё раз перед показом экрана входа,
-  // чтобы подстраховаться от кратковременного сбоя сети.
-  if (!scheduleLoaded) {
+  showScreen('login');
+
+  // Расписание — публичные данные: грузим БЕЗ авторизации и показываем
+  // на экране входа (#login-schedule-timeline). Любые ошибки изолированы
+  // (try/catch + api-слой возвращает {error}, а не бросает), поэтому экран
+  // входа и кнопка «Войти» продолжают работать даже при сбое Supabase.
+  await loadPublicSchedule();
+}
+
+// Загрузка публичного расписания для гостя (до авторизации).
+// Справочник типов рейдов нужен карточкам (название/режим), поэтому
+// грузим его вместе с рейдами. Повторные вызовы безопасны: state
+// перезаписывается целиком, контейнеры очищаются перед рендером.
+async function loadPublicSchedule() {
+  let loaded = false;
+  try {
+    if (state.raidTypes.length === 0) {
+      const r = await getRaidTypes();
+      if (r.raidTypes) state.raidTypes = r.raidTypes;
+    }
+    await loadRaids();
+    loaded = true;
+  } catch (e) {
+    console.error('[schedule] public load failed', e);
+  }
+  try {
+    renderSchedule(document.getElementById('login-schedule-timeline'));
+  } catch (e) {
+    console.error('[schedule] public render failed', e);
+  }
+  // Подстраховка от кратковременного сетевого сбоя — один повтор.
+  if (!loaded) {
     try {
       await loadRaids();
-      renderSchedule();
+      renderSchedule(document.getElementById('login-schedule-timeline'));
     } catch (e) {
-      console.error('[schedule] retry failed', e);
+      console.error('[schedule] public retry failed', e);
     }
   }
-  showScreen('login');
 }
 
 // ------------------------------------------------------------
 // ЛОГИН
+//   Обработчик вешается ОДИН раз на document (делегирование): он не
+//   зависит от того, перестраивается ли разметка формы, и гарантированно
+//   работает даже если предзагрузка расписания в init() долго выполняется
+//   или упадёт с ошибкой. Кнопка «Войти» (type=submit) шлёт событие
+//   submit на форму #login-form.
 // ------------------------------------------------------------
-$('login-form').addEventListener('submit', async e => {
+document.addEventListener('submit', async e => {
+  const form = e.target;
+  if (!form || form.id !== 'login-form') return;
   e.preventDefault();
   const input = $('login-key');
-  const key = input.value.trim();
+  const key = input ? input.value.trim() : '';
   if (!key) {
-    shakeElement($('login-form'));
+    shakeElement(form);
     return;
   }
   const result = await login(key);
@@ -150,7 +163,7 @@ $('login-form').addEventListener('submit', async e => {
     return;
   }
   if (result.error === 'invalid_key') {
-    shakeElement($('login-form'), true);
+    shakeElement(form, true);
     input.value = '';
     input.focus();
     return;
@@ -190,9 +203,11 @@ async function enterMain() {
 
   // Актуализируем расписание: данные уже есть от предзагрузки в init(),
   // повторный запрос лишь обновляет их после входа. renderSchedule()
-  // полностью перестраивает оба контейнера, дублирование карточек исключено.
+  // полностью перестраивает целевые контейнеры, дублирование карточек
+  // исключено. Здесь перерисовываем только основной интерфейс — экран
+  // входа со своим контейнером больше не активен.
   await loadRaids();
-  renderSchedule();
+  renderSchedule(document.getElementById('schedule-timeline'));
 }
 
 // ------------------------------------------------------------
@@ -764,20 +779,29 @@ function isGuest() {
 //   Одна функция обслуживает оба контейнера:
 //     #login-schedule-timeline — публичное расписание на экране входа;
 //     #schedule-timeline       — расписание в основном интерфейсе.
-//   Каждый вызов полностью перестраивает содержимое контейнеров,
+//   Аргумент roots (необязательный) — список конкретных контейнеров для
+//   перерисовки; по умолчанию перерисовываются оба существующих.
+//   Каждый вызов полностью перестраивает содержимое целевых контейнеров,
 //   поэтому повторные вызовы не приводят к дублированию карточек.
 //   Бизнес-логика создания карточек (buildRaidCard) не дублируется.
 // ------------------------------------------------------------
-function renderSchedule() {
-  const roots = [$('schedule-timeline'), $('login-schedule-timeline')].filter(Boolean);
-  // Пустое состояние показываем только когда данные реально загружались
-  // (state.raids !== null), чтобы при ошибке загрузки не затирать экран.
+function renderSchedule(targets) {
+  // targets — элемент, массив элементов или undefined (тогда оба контейнера)
+  let containerList;
+  if (!targets) {
+    containerList = [$('schedule-timeline'), $('login-schedule-timeline')];
+  } else if (Array.isArray(targets)) {
+    containerList = targets;
+  } else {
+    containerList = [targets];
+  }
+  containerList = containerList.filter(el => el && typeof el === 'object' && 'innerHTML' in el);
   const days = [{v:3,n:'Среда'},{v:4,n:'Четверг'},{v:5,n:'Пятница'},{v:6,n:'Суббота'},{v:7,n:'Воскресенье'},{v:1,n:'Понедельник'},{v:2,n:'Вторник'}];
   const raids = state.raids || [];
   const used = days
     .map(d => ({ ...d, raids: raids.filter(r => Number(r.weekday) === d.v).sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||'')) }))
     .filter(d => d.raids.length);
-  for (const root of roots) {
+  for (const root of containerList) {
     root.innerHTML = '';
     if (!used.length) {
       root.innerHTML = '<div class="schedule-empty">Расписание пока пустое.</div>';
