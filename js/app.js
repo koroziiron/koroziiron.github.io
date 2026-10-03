@@ -87,11 +87,14 @@ async function init() {
     showScreen('offline');
     return;
   }
-  // Публичное расписание должно быть доступно ещё до авторизации.
-  // Ошибка загрузки расписания не должна блокировать экран входа.
-  await loadRaids();
-  renderSchedule();
-
+  // Публичное расписание загружаем до авторизации. Ошибка чтения
+  // не должна блокировать вход или основной интерфейс.
+  try {
+    await loadRaids();
+    renderSchedule();
+  } catch (err) {
+    console.warn('Не удалось загрузить публичное расписание', err);
+  }
   // Проверяем сохранённую сессию
   const savedMember = localStorage.getItem('kp_member');
   if (savedMember) {
@@ -160,9 +163,13 @@ async function enterMain() {
   }
 
   await loadCharacters();
+
+  // Сначала показываем сохранённые значения и расписание без ожидания парсера.
   await loadRaids();
   renderCharacters();
   renderSchedule();
+
+  // Обновление ГС/БС идёт в фоне; сбой источников не блокирует вход.
   void syncStatsFromWorker();
 }
 
@@ -721,12 +728,46 @@ async function loadRaids() {
 // РЕНДЕР РАСПИСАНИЯ
 // ------------------------------------------------------------
 function renderSchedule() {
- const roots=[$('schedule-timeline'),$('login-schedule-timeline')].filter(Boolean);
- const days=[{v:3,n:'Среда'},{v:4,n:'Четверг'},{v:5,n:'Пятница'},{v:6,n:'Суббота'},{v:7,n:'Воскресенье'},{v:1,n:'Понедельник'},{v:2,n:'Вторник'}];
- const used=days.map(d=>({...d,raids:state.raids.filter(r=>Number(r.weekday)===d.v).sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||''))})).filter(d=>d.raids.length);
- for(const root of roots){root.innerHTML='';if(!used.length){root.innerHTML='<div class="schedule-empty">Расписание пока пустое.</div>';continue;}
- for(const d of used){const col=document.createElement('section');col.className='weekday-column';const h=document.createElement('h3');h.className='weekday-title';h.textContent=d.n;col.appendChild(h);const body=document.createElement('div');body.className='weekday-cards';col.appendChild(body);for(const raid of d.raids){const card=buildRaidCard(raid);const t=document.createElement('div');t.className='weekday-time';t.textContent=(raid.start_time||'20:00').slice(0,5)+' МСК';card.insertBefore(t,card.firstChild);body.appendChild(card);}}
- }
+  const roots = [$('login-schedule-timeline'), $('schedule-timeline')].filter(Boolean);
+  if (!roots.length) return;
+  const days = [
+    {v:3,n:'Среда'}, {v:4,n:'Четверг'}, {v:5,n:'Пятница'},
+    {v:6,n:'Суббота'}, {v:7,n:'Воскресенье'},
+    {v:1,n:'Понедельник'}, {v:2,n:'Вторник'}
+  ];
+  const used = days.map(d => ({
+    ...d,
+    raids: state.raids.filter(r => Number(r.weekday) === d.v)
+      .sort((a,b) => (a.start_time || '').localeCompare(b.start_time || ''))
+  })).filter(d => d.raids.length);
+
+  for (const root of roots) {
+    root.innerHTML = '';
+    if (!used.length) {
+      root.innerHTML = '<div class="schedule-empty">Расписание пока пустое.</div>';
+      continue;
+    }
+    for (const d of used) {
+      const col = document.createElement('section');
+      col.className = 'weekday-column';
+      const h = document.createElement('h3');
+      h.className = 'weekday-title';
+      h.textContent = d.n;
+      col.appendChild(h);
+      const body = document.createElement('div');
+      body.className = 'weekday-cards';
+      col.appendChild(body);
+      for (const raid of d.raids) {
+        const card = buildRaidCard(raid);
+        const t = document.createElement('div');
+        t.className = 'weekday-time';
+        t.textContent = (raid.start_time || '20:00').slice(0,5) + ' МСК';
+        card.insertBefore(t, card.firstChild);
+        body.appendChild(card);
+      }
+      root.appendChild(col);
+    }
+  }
 }
 
 function formatDayLabel(date) {
@@ -873,9 +914,6 @@ function buildRaidCard(raid) {
     return false;
   }
 
-  // Гостям просмотр доступен, но записываться на рейд нельзя.
-  if (!state.member) return card;
-
   // Drop-зона
   card.addEventListener('dragover', e => {
     e.preventDefault();
@@ -889,6 +927,7 @@ function buildRaidCard(raid) {
 
   card.addEventListener('drop', async e => {
     e.preventDefault();
+    if (!state.member) return;
     card.classList.remove('drag-over');
 
     const charId = e.dataTransfer.getData('text/character-id');
