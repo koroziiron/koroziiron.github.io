@@ -118,14 +118,23 @@ SVG-ГРАДИЕНТЫ (скрытые)
 
 /* ---------- Экран логина ---------- */
 .screen-login {
-  align-items: center;
-  justify-content: center;
-  padding: 40px 20px;
+  align-items: stretch;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 28px;
+  min-height: 100vh;
+  padding: 28px clamp(16px, 4vw, 56px) 48px;
+  overflow-y: auto;
   background:
-    radial-gradient(circle at 50% 30%, rgba(201, 160, 60, 0.06) 0%, transparent 50%),
-    radial-gradient(circle at 50% 80%, rgba(120, 140, 180, 0.04) 0%, transparent 50%),
+    radial-gradient(circle at 50% 0%, rgba(201, 160, 60, 0.06) 0%, transparent 45%),
     var(--bg-deep);
 }
+.screen-login.active { display: flex; }
+.screen-login .login-box { max-width: 380px; width: 100%; margin: 0 auto; gap: 14px; }
+.screen-login .login-emblem { width: 76px; height: 76px; }
+.screen-login .login-schedule-panel { width: 100%; max-width: 1500px; margin: 0 auto; }
+.login-schedule-panel > .raids-title { text-align: center; margin-bottom: 20px; }
+.login-schedule-panel .schedule-timeline { width: 100%; }
 .login-box {
   display: flex;
   flex-direction: column;
@@ -1361,3 +1370,5 @@ SVG-ГРАДИЕНТЫ (скрытые)
   .weekday-picker { gap: 4px; }
   .weekday-choice { font-size: 10px; }
 }
+/* Расписание на экране входа — только для просмотра. */
+.login-schedule-panel .raid-card { pointer-events: none; }
