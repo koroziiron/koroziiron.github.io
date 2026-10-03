@@ -87,6 +87,12 @@ async function init() {
     showScreen('offline');
     return;
   }
+
+  // Публичное расписание загружается до авторизации.
+  // Ошибка загрузки рейдов не блокирует экран входа.
+  await loadRaids();
+  renderSchedule();
+
   // Проверяем сохранённую сессию
   const savedMember = localStorage.getItem('kp_member');
   if (savedMember) {
@@ -142,7 +148,7 @@ function shakeElement(el, red = false) {
 // ------------------------------------------------------------
 async function enterMain() {
   $('header-nickname').textContent = state.member.nickname;
-  showScreen('login');
+  showScreen('main');
 
   if (state.classes.length === 0) {
     const r = await getClasses();
@@ -154,9 +160,11 @@ async function enterMain() {
     if (r.raidTypes) state.raidTypes = r.raidTypes;
   }
 
-  // На экране входа показываем только публичное расписание.
+  await loadCharacters();
   await loadRaids();
+  renderCharacters();
   renderSchedule();
+  void syncStatsFromWorker();
 }
 
 // ------------------------------------------------------------
@@ -746,7 +754,7 @@ function buildRaidCard(raid) {
   const title = document.createElement('div');
   title.className = 'raid-card-title';
   title.textContent = rt.name;
-  if (state.member.nickname === 'korozii' || raid.created_by === state.member.id) {
+  if (state.member && (state.member.nickname === 'korozii' || raid.created_by === state.member.id)) {
     title.classList.add('raid-card-title-editable');
     title.title = 'Нажми, чтобы изменить рейд и день';
     title.tabIndex = 0;
@@ -804,7 +812,7 @@ function buildRaidCard(raid) {
   for (const s of signupsNow) {
     const row = document.createElement('div');
     row.className = 'raid-signup-row';
-    if (s.member_id === state.member.id) row.classList.add('mine');
+    if (state.member && s.member_id === state.member.id) row.classList.add('mine');
 
     const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     iconSvg.setAttribute('class', 'raid-signup-icon');
@@ -829,7 +837,7 @@ function buildRaidCard(raid) {
     row.appendChild(ilvl);
 
     // Кнопка удаления записи (свои или админ)
-    if (s.member_id === state.member.id || state.member.nickname === 'korozii') {
+    if (state.member && (s.member_id === state.member.id || state.member.nickname === 'korozii')) {
       const del = document.createElement('button');
       del.className = 'raid-signup-delete';
       del.title = 'Убрать с рейда';
@@ -856,6 +864,7 @@ function buildRaidCard(raid) {
 
   // Права на удаление рейда
   function canDeleteRaid(raid) {
+    if (!state.member) return false;
     if (state.member.nickname === 'korozii') return true;
     if (raid.created_by === state.member.id) {
       // Только если на рейде нет других записей кроме создателя
@@ -865,7 +874,8 @@ function buildRaidCard(raid) {
     return false;
   }
 
-  // Drop-зона
+  // Drop-зона доступна только авторизованному пользователю.
+  if (state.member) {
   card.addEventListener('dragover', e => {
     e.preventDefault();
     if (card.classList.contains('drag-over')) return;
@@ -910,6 +920,7 @@ function buildRaidCard(raid) {
     renderSchedule();
     refreshRaidBoard();
   });
+  }
 
   return card;
 }
