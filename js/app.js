@@ -87,9 +87,8 @@ async function init() {
     showScreen('offline');
     return;
   }
-
-  // Публичное расписание загружается до авторизации.
-  // Ошибка загрузки рейдов не блокирует экран входа.
+  // Публичное расписание должно быть доступно ещё до авторизации.
+  // Ошибка загрузки расписания не должна блокировать экран входа.
   await loadRaids();
   renderSchedule();
 
@@ -874,8 +873,10 @@ function buildRaidCard(raid) {
     return false;
   }
 
-  // Drop-зона доступна только авторизованному пользователю.
-  if (state.member) {
+  // Гостям просмотр доступен, но записываться на рейд нельзя.
+  if (!state.member) return card;
+
+  // Drop-зона
   card.addEventListener('dragover', e => {
     e.preventDefault();
     if (card.classList.contains('drag-over')) return;
@@ -920,7 +921,6 @@ function buildRaidCard(raid) {
     renderSchedule();
     refreshRaidBoard();
   });
-  }
 
   return card;
 }
