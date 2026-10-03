@@ -99,62 +99,17 @@ async function init() {
     }
   }
   showScreen('login');
-
-  // Расписание — публичные данные: грузим БЕЗ авторизации и показываем
-  // на экране входа (#login-schedule-timeline). Любые ошибки изолированы
-  // (try/catch + api-слой возвращает {error}, а не бросает), поэтому экран
-  // входа и кнопка «Войти» продолжают работать даже при сбое Supabase.
-  await loadPublicSchedule();
-}
-
-// Загрузка публичного расписания для гостя (до авторизации).
-// Справочник типов рейдов нужен карточкам (название/режим), поэтому
-// грузим его вместе с рейдами. Повторные вызовы безопасны: state
-// перезаписывается целиком, контейнеры очищаются перед рендером.
-async function loadPublicSchedule() {
-  let loaded = false;
-  try {
-    if (state.raidTypes.length === 0) {
-      const r = await getRaidTypes();
-      if (r.raidTypes) state.raidTypes = r.raidTypes;
-    }
-    await loadRaids();
-    loaded = true;
-  } catch (e) {
-    console.error('[schedule] public load failed', e);
-  }
-  try {
-    renderSchedule(document.getElementById('login-schedule-timeline'));
-  } catch (e) {
-    console.error('[schedule] public render failed', e);
-  }
-  // Подстраховка от кратковременного сетевого сбоя — один повтор.
-  if (!loaded) {
-    try {
-      await loadRaids();
-      renderSchedule(document.getElementById('login-schedule-timeline'));
-    } catch (e) {
-      console.error('[schedule] public retry failed', e);
-    }
-  }
 }
 
 // ------------------------------------------------------------
 // ЛОГИН
-//   Обработчик вешается ОДИН раз на document (делегирование): он не
-//   зависит от того, перестраивается ли разметка формы, и гарантированно
-//   работает даже если предзагрузка расписания в init() долго выполняется
-//   или упадёт с ошибкой. Кнопка «Войти» (type=submit) шлёт событие
-//   submit на форму #login-form.
 // ------------------------------------------------------------
-document.addEventListener('submit', async e => {
-  const form = e.target;
-  if (!form || form.id !== 'login-form') return;
+$('login-form').addEventListener('submit', async e => {
   e.preventDefault();
   const input = $('login-key');
-  const key = input ? input.value.trim() : '';
+  const key = input.value.trim();
   if (!key) {
-    shakeElement(form);
+    shakeElement($('login-form'));
     return;
   }
   const result = await login(key);
@@ -163,7 +118,7 @@ document.addEventListener('submit', async e => {
     return;
   }
   if (result.error === 'invalid_key') {
-    shakeElement(form, true);
+    shakeElement($('login-form'), true);
     input.value = '';
     input.focus();
     return;
@@ -194,20 +149,14 @@ async function enterMain() {
     if (r.classes) state.classes = r.classes;
   }
 
-  // Справочник типов рейдов уже мог быть загружен в init() для публичного
-  // расписания — не перезапрашиваем его без необходимости.
   if (state.raidTypes.length === 0) {
     const r = await getRaidTypes();
     if (r.raidTypes) state.raidTypes = r.raidTypes;
   }
 
-  // Актуализируем расписание: данные уже есть от предзагрузки в init(),
-  // повторный запрос лишь обновляет их после входа. renderSchedule()
-  // полностью перестраивает целевые контейнеры, дублирование карточек
-  // исключено. Здесь перерисовываем только основной интерфейс — экран
-  // входа со своим контейнером больше не активен.
+  // На экране входа показываем только публичное расписание.
   await loadRaids();
-  renderSchedule(document.getElementById('schedule-timeline'));
+  renderSchedule();
 }
 
 // ------------------------------------------------------------
@@ -762,72 +711,15 @@ async function loadRaids() {
 }
 
 // ------------------------------------------------------------
-// ПУБЛИЧНОЕ РАСПИСАНИЕ (без авторизации)
-//   buildRaidCard рассчитан на авторизованного пользователя: он читает
-//   state.member (права на редактирование/удаление, подсветка своих
-//   записей, drop-зона). Для экрана входа используется тот же рендер,
-//   но с «гостевым» состоянием member === null — права на изменение
-//   данных при этом не ослабляются: все mutating-обработчики недоступны
-//   гостю, а серверные политики Supabase остаются как были.
-// ------------------------------------------------------------
-function isGuest() {
-  return !state.member;
-}
-
-// ------------------------------------------------------------
 // РЕНДЕР РАСПИСАНИЯ
-//   Одна функция обслуживает оба контейнера:
-//     #login-schedule-timeline — публичное расписание на экране входа;
-//     #schedule-timeline       — расписание в основном интерфейсе.
-//   Аргумент roots (необязательный) — список конкретных контейнеров для
-//   перерисовки; по умолчанию перерисовываются оба существующих.
-//   Каждый вызов полностью перестраивает содержимое целевых контейнеров,
-//   поэтому повторные вызовы не приводят к дублированию карточек.
-//   Бизнес-логика создания карточек (buildRaidCard) не дублируется.
 // ------------------------------------------------------------
-function renderSchedule(targets) {
-  // targets — элемент, массив элементов или undefined (тогда оба контейнера)
-  let containerList;
-  if (!targets) {
-    containerList = [$('schedule-timeline'), $('login-schedule-timeline')];
-  } else if (Array.isArray(targets)) {
-    containerList = targets;
-  } else {
-    containerList = [targets];
-  }
-  containerList = containerList.filter(el => el && typeof el === 'object' && 'innerHTML' in el);
-  const days = [{v:3,n:'Среда'},{v:4,n:'Четверг'},{v:5,n:'Пятница'},{v:6,n:'Суббота'},{v:7,n:'Воскресенье'},{v:1,n:'Понедельник'},{v:2,n:'Вторник'}];
-  const raids = state.raids || [];
-  const used = days
-    .map(d => ({ ...d, raids: raids.filter(r => Number(r.weekday) === d.v).sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||'')) }))
-    .filter(d => d.raids.length);
-  for (const root of containerList) {
-    root.innerHTML = '';
-    if (!used.length) {
-      root.innerHTML = '<div class="schedule-empty">Расписание пока пустое.</div>';
-      continue;
-    }
-    for (const d of used) {
-      const col = document.createElement('section');
-      col.className = 'weekday-column';
-      const h = document.createElement('h3');
-      h.className = 'weekday-title';
-      h.textContent = d.n;
-      col.appendChild(h);
-      const body = document.createElement('div');
-      body.className = 'weekday-cards';
-      col.appendChild(body);
-      for (const raid of d.raids) {
-        const card = buildRaidCard(raid);
-        const t = document.createElement('div');
-        t.className = 'weekday-time';
-        t.textContent = (raid.start_time || '20:00').slice(0,5) + ' МСК';
-        card.insertBefore(t, card.firstChild);
-        body.appendChild(card);
-      }
-      root.appendChild(col);
-    }
-  }
+function renderSchedule() {
+ const roots=[$('schedule-timeline'),$('login-schedule-timeline')].filter(Boolean);
+ const days=[{v:3,n:'Среда'},{v:4,n:'Четверг'},{v:5,n:'Пятница'},{v:6,n:'Суббота'},{v:7,n:'Воскресенье'},{v:1,n:'Понедельник'},{v:2,n:'Вторник'}];
+ const used=days.map(d=>({...d,raids:state.raids.filter(r=>Number(r.weekday)===d.v).sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||''))})).filter(d=>d.raids.length);
+ for(const root of roots){root.innerHTML='';if(!used.length){root.innerHTML='<div class="schedule-empty">Расписание пока пустое.</div>';continue;}
+ for(const d of used){const col=document.createElement('section');col.className='weekday-column';const h=document.createElement('h3');h.className='weekday-title';h.textContent=d.n;col.appendChild(h);const body=document.createElement('div');body.className='weekday-cards';col.appendChild(body);for(const raid of d.raids){const card=buildRaidCard(raid);const t=document.createElement('div');t.className='weekday-time';t.textContent=(raid.start_time||'20:00').slice(0,5)+' МСК';card.insertBefore(t,card.firstChild);body.appendChild(card);}}
+ }
 }
 
 function formatDayLabel(date) {
@@ -854,7 +746,7 @@ function buildRaidCard(raid) {
   const title = document.createElement('div');
   title.className = 'raid-card-title';
   title.textContent = rt.name;
-  if (!isGuest() && (state.member.nickname === 'korozii' || raid.created_by === state.member.id)) {
+  if (state.member.nickname === 'korozii' || raid.created_by === state.member.id) {
     title.classList.add('raid-card-title-editable');
     title.title = 'Нажми, чтобы изменить рейд и день';
     title.tabIndex = 0;
@@ -912,7 +804,7 @@ function buildRaidCard(raid) {
   for (const s of signupsNow) {
     const row = document.createElement('div');
     row.className = 'raid-signup-row';
-    if (!isGuest() && s.member_id === state.member.id) row.classList.add('mine');
+    if (s.member_id === state.member.id) row.classList.add('mine');
 
     const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     iconSvg.setAttribute('class', 'raid-signup-icon');
@@ -937,7 +829,7 @@ function buildRaidCard(raid) {
     row.appendChild(ilvl);
 
     // Кнопка удаления записи (свои или админ)
-    if (!isGuest() && (s.member_id === state.member.id || state.member.nickname === 'korozii')) {
+    if (s.member_id === state.member.id || state.member.nickname === 'korozii') {
       const del = document.createElement('button');
       del.className = 'raid-signup-delete';
       del.title = 'Убрать с рейда';
@@ -964,7 +856,6 @@ function buildRaidCard(raid) {
 
   // Права на удаление рейда
   function canDeleteRaid(raid) {
-    if (isGuest()) return false;
     if (state.member.nickname === 'korozii') return true;
     if (raid.created_by === state.member.id) {
       // Только если на рейде нет других записей кроме создателя
