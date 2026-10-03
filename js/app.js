@@ -100,8 +100,7 @@ async function init() {
   }
   showScreen('login');
 }
-await loadRaids();
-  renderSchedule();
+
 // ------------------------------------------------------------
 // ЛОГИН
 // ------------------------------------------------------------
@@ -143,8 +142,7 @@ function shakeElement(el, red = false) {
 // ------------------------------------------------------------
 async function enterMain() {
   $('header-nickname').textContent = state.member.nickname;
-
-  showScreen('main');
+  showScreen('login');
 
   if (state.classes.length === 0) {
     const r = await getClasses();
@@ -156,13 +154,9 @@ async function enterMain() {
     if (r.raidTypes) state.raidTypes = r.raidTypes;
   }
 
-  await loadCharacters();
+  // На экране входа показываем только публичное расписание.
   await loadRaids();
-
-  renderCharacters();
   renderSchedule();
-
-  void syncStatsFromWorker();
 }
 
 // ------------------------------------------------------------
@@ -752,13 +746,7 @@ function buildRaidCard(raid) {
   const title = document.createElement('div');
   title.className = 'raid-card-title';
   title.textContent = rt.name;
-  if (
-  state.member &&
-  (
-    state.member.nickname === 'korozii' ||
-    raid.created_by === state.member.id
-  )
-) {
+  if (state.member.nickname === 'korozii' || raid.created_by === state.member.id) {
     title.classList.add('raid-card-title-editable');
     title.title = 'Нажми, чтобы изменить рейд и день';
     title.tabIndex = 0;
