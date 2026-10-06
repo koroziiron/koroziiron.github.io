@@ -227,6 +227,7 @@ SVG-ГРАДИЕНТЫ (скрытые)
 ============================================================ */
 .screen-main {
   flex-direction: column;
+  min-height: 100vh;
 }
 
 /* ---------- Шапка ---------- */
@@ -268,13 +269,14 @@ SVG-ГРАДИЕНТЫ (скрытые)
 
 /* ---------- Основная область ---------- */
 .main-layout {
-  flex: 1;
+  flex: none;
   display: grid;
-  grid-template-columns: 1fr 400px;
+  grid-template-columns: minmax(0, 1fr) 400px;
   gap: 16px;
   padding: 16px;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
+  align-items: start;
 }
 
 /* ---------- Левая колонка (рейды) ---------- */
@@ -319,6 +321,11 @@ SVG-ГРАДИЕНТЫ (скрытые)
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: sticky;
+  top: 16px;
+  height: calc(100vh - 32px);
+  max-height: calc(100vh - 32px);
+  min-height: 0;
 }
 .characters-header {
   display: flex;
@@ -889,6 +896,10 @@ SVG-ГРАДИЕНТЫ (скрытые)
   }
   .characters-panel {
     order: -1;
+    position: relative;
+    top: auto;
+    height: auto;
+    max-height: none;
   }
 }
 

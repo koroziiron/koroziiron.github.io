@@ -89,12 +89,8 @@ async function init() {
   }
   // Публичное расписание загружаем до авторизации. Ошибка чтения
   // не должна блокировать вход или основной интерфейс.
-  try {
-    await loadRaids();
-    renderSchedule();
-  } catch (err) {
-    console.warn('Не удалось загрузить публичное расписание', err);
-  }
+  await loadRaids(true);
+  renderSchedule();
   // Проверяем сохранённую сессию
   const savedMember = localStorage.getItem('kp_member');
   if (savedMember) {
@@ -152,25 +148,37 @@ async function enterMain() {
   $('header-nickname').textContent = state.member.nickname;
   showScreen('main');
 
-  if (state.classes.length === 0) {
-    const r = await getClasses();
-    if (r.classes) state.classes = r.classes;
-  }
+  // Ничего не блокируем ожиданием справочников/расписания: сначала
+  // показываем персонажей ровно в том виде, в котором они лежат в БД.
+  const charactersPromise = loadCharacters();
 
-  if (state.raidTypes.length === 0) {
-    const r = await getRaidTypes();
-    if (r.raidTypes) state.raidTypes = r.raidTypes;
-  }
+  const classesPromise = (async () => {
+    if (state.classes.length === 0) {
+      const r = await getClasses();
+      if (r.classes) state.classes = r.classes;
+    }
+  })();
 
-  await loadCharacters();
+  const raidTypesPromise = (async () => {
+    if (state.raidTypes.length === 0) {
+      const r = await getRaidTypes();
+      if (r.raidTypes) state.raidTypes = r.raidTypes;
+    }
+  })();
 
-  // Сначала показываем сохранённые значения и расписание без ожидания парсера.
-  await loadRaids();
+  // Персонажи появляются сразу после ответа characters из БД.
+  // Никакие запросы Оружейной/прокси к этому моменту не нужны.
+  await charactersPromise;
   renderCharacters();
-  renderSchedule();
 
-  // Обновление ГС/БС идёт в фоне; сбой источников не блокирует вход.
+  // ГС/БС обновляются строго в фоне. Если источник недоступен,
+  // значения из БД остаются как есть и пользователь ничего не замечает.
   void syncStatsFromWorker();
+
+  // Расписание и справочники догружаются независимо от списка персонажей.
+  const raidsPromise = loadRaids(true);
+  await Promise.all([classesPromise, raidTypesPromise, raidsPromise]);
+  renderSchedule();
 }
 
 // ------------------------------------------------------------
@@ -188,30 +196,28 @@ async function syncStatsFromWorker() {
   if (statsSyncing) return;
   statsSyncing = true;
   try {
-    const { changed, errors } = await refreshCharactersStats(
+    const { changed } = await refreshCharactersStats(
       state.characters,
       async (patches) => {
-        // Сохраняем новые ГС/БС в базу одним вызовом
-        const r = await saveChanges(state.member.id, {
+        // Сначала пытаемся сохранить новые ГС/БС в БД.
+        // Сам refreshCharactersStats применит patches к state только после
+        // успешного сохранения. При любой ошибке оставляем значения из БД.
+        return saveChanges(state.member.id, {
           inserted: [],
           updated: patches,
           deleted: [],
         });
-        if (r.error) console.error('[stats] persist failed', r.error);
       }
     );
 
     if (changed.length > 0) {
       showToast(`ГС/БС обновлены: ${changed.length} шт.`, 'success');
-      // значения уже применены к state.characters — панелька и табличка
-      // перерисуются сразу после возврата из syncStatsFromWorker в enterMain;
-      // здесь подстраховываемся на случай вызова не из входа
       renderCharacters();
       syncRaidBoardWithCharacters();
-    } else if (errors.length === errorsTotal(state.characters)) {
-      // вообще ничего не удалось получить — тихо оставляем значения из БД
-      console.warn('[stats] worker returned nothing usable');
     }
+    // Ошибки источников намеренно никак не показываем пользователю.
+  } catch {
+    // Фоновое обновление никогда не должно мешать уже загруженным данным.
   } finally {
     statsSyncing = false;
   }
@@ -718,10 +724,19 @@ $('new-char-name').addEventListener('keydown', e => {
   }
 });
 
-async function loadRaids() {
-  const r = await getRaidsInRange();
-  if (r.error) { showToast('Не удалось загрузить рейды', 'error'); return; }
-  state.raids = r.raids || [];
+async function loadRaids(silent = false) {
+  try {
+    const r = await getRaidsInRange();
+    if (r.error) {
+      if (!silent) showToast('Не удалось загрузить рейды', 'error');
+      return false;
+    }
+    state.raids = r.raids || [];
+    return true;
+  } catch {
+    if (!silent) showToast('Не удалось загрузить рейды', 'error');
+    return false;
+  }
 }
 
 // ------------------------------------------------------------

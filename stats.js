@@ -129,18 +129,31 @@ export async function refreshCharactersStats(characters, onPersist) {
     if (newBs !== null && newBs !== toInteger(ch.combat_power)) patch.combat_power = newBs;
 
     if (Object.keys(patch).length > 1) {
-      if ('item_level' in patch) ch.item_level = patch.item_level;
-      if ('combat_power' in patch) ch.combat_power = patch.combat_power;
       changed.push(patch);
     }
   });
 
   if (changed.length && typeof onPersist === 'function') {
     try {
-      await onPersist(changed);
-    } catch (e) {
-      // UI остаётся на прежних данных; persist callback сам логирует ошибку.
+      const result = await onPersist(changed);
+      if (result?.error) {
+        // Не меняем state, если запись новых значений в БД не удалась.
+        return { changed: [], errors: ['persist'] };
+      }
+    } catch {
+      // Тихо оставляем значения из БД.
+      return { changed: [], errors: ['persist'] };
     }
   }
+
+  // Только после успешного получения и, если нужно, сохранения применяем
+  // новые значения к объектам, которые уже показаны пользователю.
+  for (const patch of changed) {
+    const ch = alive.find(c => String(c.id) === String(patch.id));
+    if (!ch) continue;
+    if ('item_level' in patch) ch.item_level = patch.item_level;
+    if ('combat_power' in patch) ch.combat_power = patch.combat_power;
+  }
+
   return { changed, errors: [] };
 }
