@@ -125,22 +125,43 @@ export async function refreshCharactersStats(characters, onPersist) {
     const patch = { id: ch.id };
     const newGs = toNumeric(stats.gearValue);
     const newBs = toInteger(stats.combatValue);
-    if (newGs !== null && newGs !== toNumeric(ch.item_level)) patch.item_level = newGs;
-    if (newBs !== null && newBs !== toInteger(ch.combat_power)) patch.combat_power = newBs;
+    // Нулевые/некорректные значения с оружейки не принимаем — не затираем базу.
+    if (newGs !== null && newGs > 0 && newGs !== toNumeric(ch.item_level)) patch.item_level = newGs;
+    if (newBs !== null && newBs > 0 && newBs !== toInteger(ch.combat_power)) patch.combat_power = newBs;
 
     if (Object.keys(patch).length > 1) {
-      if ('item_level' in patch) ch.item_level = patch.item_level;
-      if ('combat_power' in patch) ch.combat_power = patch.combat_power;
       changed.push(patch);
     }
   });
 
+  // Значения из БД остаются в UI, пока новые не получены с оружейки
+  // И не сохранены в БД. Применяем к state только успешно записанное.
+  let toApply = changed;
+  const errors = [];
   if (changed.length && typeof onPersist === 'function') {
     try {
-      await onPersist(changed);
-    } catch (e) {
-      // UI остаётся на прежних данных; persist callback сам логирует ошибку.
+      const result = await onPersist(changed);
+      if (result?.error) {
+        errors.push('persist');
+        const failedIds = new Set(
+          Array.isArray(result.error)
+            ? result.error.map(e => String(e.id)).filter(id => id !== 'undefined')
+            : []
+        );
+        // Если непонятно, какие записи упали — не применяем ничего.
+        toApply = failedIds.size ? changed.filter(p => !failedIds.has(String(p.id))) : [];
+      }
+    } catch {
+      return { changed: [], errors: ['persist'] };
     }
   }
-  return { changed, errors: [] };
+
+  for (const patch of toApply) {
+    const ch = alive.find(c => String(c.id) === String(patch.id));
+    if (!ch) continue;
+    if ('item_level' in patch) ch.item_level = patch.item_level;
+    if ('combat_power' in patch) ch.combat_power = patch.combat_power;
+  }
+
+  return { changed: toApply, errors };
 }
