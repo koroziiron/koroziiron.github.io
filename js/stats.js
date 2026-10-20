@@ -125,9 +125,12 @@ export async function refreshCharactersStats(characters, onPersist) {
     const patch = { id: ch.id };
     const newGs = toNumeric(stats.gearValue);
     const newBs = toInteger(stats.combatValue);
-    // Нулевые/некорректные значения с оружейки не принимаем — не затираем базу.
-    if (newGs !== null && newGs > 0 && newGs !== toNumeric(ch.item_level)) patch.item_level = newGs;
-    if (newBs !== null && newBs > 0 && newBs !== toInteger(ch.combat_power)) patch.combat_power = newBs;
+    // Храним максимум: если с оружейки пришло значение меньше (или равно)
+    // уже записанному в БД — не перезаписываем. Нули/мусор тоже отсекаются.
+    const curGs = toNumeric(ch.item_level) ?? 0;
+    const curBs = toInteger(ch.combat_power) ?? 0;
+    if (newGs !== null && newGs > curGs) patch.item_level = newGs;
+    if (newBs !== null && newBs > curBs) patch.combat_power = newBs;
 
     if (Object.keys(patch).length > 1) {
       changed.push(patch);
