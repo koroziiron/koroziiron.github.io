@@ -1389,3 +1389,14 @@ SVG-ГРАДИЕНТЫ (скрытые)
   .weekday-picker { gap: 4px; }
   .weekday-choice { font-size: 10px; }
 }
+
+/* ===== Рейды: иконки вместо чекбоксов ===== */
+.raids-board-header{display:flex;align-items:center;gap:14px}
+.raid-clear-btn{border:1px solid #4b3a20;background:#171714;color:#c4ad78;padding:6px 14px;border-radius:10px;cursor:pointer;font-size:13px;transition:.2s}
+.raid-clear-btn:hover{color:#ffe08a;border-color:#d4a746;background:#241e13}
+.raid-board .progress-toggle{width:44px;height:44px;padding:5px;border:0;background:transparent;font-size:0;border-radius:10px;transition:transform .15s,color .2s,filter .2s}
+.raid-board .progress-toggle .raid-icon{width:100%;height:100%;display:block;fill:currentColor;pointer-events:none}
+.raid-board .progress-toggle.empty{color:#f2f2f2}
+.raid-board .progress-toggle.signed{color:#f0c63c;background:transparent;border:0}
+.raid-board .progress-toggle.done{color:#46d17a;background:transparent;border:0;filter:drop-shadow(0 0 6px #46d17a55)}
+.raid-board .progress-toggle.blocked{color:#d94a46;background:transparent;opacity:.75;cursor:not-allowed}

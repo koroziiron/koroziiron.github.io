@@ -1139,9 +1139,23 @@ $('raid-create-btn').addEventListener('click', async () => {
   refreshRaidBoard();
 });
 
-const BOARD_KEYS=['Арсенос','Серка','Казерос','Армог'];
+// Колонки таблички строятся из raid_types: один рейд = уникальный icon_id
+// (латиница, например armog / kazeross). Мин. ГС для отметки — минимальный
+// required_ilvl среди всех сложностей этого рейда.
+function boardRaids() {
+  const groups = new Map();
+  for (const rt of state.raidTypes) {
+    const key = rt.icon_id || rt.name;
+    let g = groups.get(key);
+    if (!g) { g = { key, icon: rt.icon_id || null, name: rt.name, minIlvl: Infinity, order: Number(rt.id) || 0 }; groups.set(key, g); }
+    g.minIlvl = Math.min(g.minIlvl, Number(rt.required_ilvl) || Infinity);
+    g.order = Math.min(g.order, Number(rt.id) || g.order);
+  }
+  return [...groups.values()].sort((a, b) => a.minIlvl - b.minIlvl || a.order - b.order);
+}
+const boardKeys = () => boardRaids().map(g => g.key);
+const allDone = ch => { const k = boardKeys(); return k.length > 0 && k.every(x => doneMarks.get(ch.id + '|' + x) === true); };
 function setupTabs(){const nav=$('dragons-tabs');if(!nav)return;nav.querySelectorAll('[data-tab]').forEach(btn=>btn.addEventListener('click',()=>{nav.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===btn));$('schedule-view').classList.toggle('hidden',btn.dataset.tab!=='schedule');$('raids-view').classList.toggle('hidden',btn.dataset.tab!=='raids');if(btn.dataset.tab==='raids'){if(!raidBoardLoaded||raidBoardDirty)loadRaidBoard();}}));}
-function normalIlvl(key){const list=state.raidTypes.filter(x=>x.name===key);return Number((list.find(x=>/normal|обыч/i.test(x.mode))||list[0])?.required_ilvl||Infinity);}
 // ------------------------------------------------------------
 // ТАБЛИЧКА РЕЙДОВ
 // Таблица строится один раз, дальше только точечно обновляется.
@@ -1192,35 +1206,46 @@ function syncRaidBoardWithCharacters() {
       const nameEl = tr.querySelector('.board-character');
       if (nameEl && nameEl.textContent !== ch.name) nameEl.textContent = ch.name;
       const cells = [...tr.querySelectorAll('td.progress-cell')];
-      BOARD_KEYS.forEach((key, i) => {
+      boardRaids().forEach((g, i) => {
         const btn = cells[i]?.querySelector('.progress-toggle');
         if (!btn || btn.matches(':hover,:active')) return; // не мешаем клику
-        updateProgressButton(btn, ch, key);
+        updateProgressButton(btn, ch, g);
       });
-      tr.classList.toggle('all-done', BOARD_KEYS.every(k => doneMarks.get(ch.id + '|' + k) === true));
+      tr.classList.toggle('all-done', allDone(ch));
     }
   }, 250);
 }
 
 // Состояние кнопок отметок для персонажа по конкретному рейду
-function progressBtnState(ch, key) {
-  const doneNow = doneMarks.get(ch.id + '|' + key) === true;
-  const isSigned = signedChars.has(ch.id + '|' + key);
-  const can = Number(ch.item_level || 0) >= normalIlvl(key);
+function progressBtnState(ch, g) {
+  const doneNow = doneMarks.get(ch.id + '|' + g.key) === true;
+  const isSigned = signedChars.has(ch.id + '|' + g.key);
+  const can = Number(ch.item_level || 0) >= g.minIlvl;
   return {
     can, doneNow,
     cls: 'progress-toggle ' + (!can ? 'blocked' : doneNow ? 'done' : isSigned ? 'signed' : 'empty'),
-    text: !can ? '×' : doneNow ? '✓' : isSigned ? '−' : '',
-    title: !can ? 'Недостаточный ГС' : doneNow ? 'Снять отметку' : 'Отметить выполнение',
+    title: g.name + ' — ' + (!can ? 'недостаточный ГС (нужно ' + g.minIlvl + ')' : doneNow ? 'пройден, нажмите чтобы снять отметку' : isSigned ? 'записан, нажмите чтобы отметить пройденным' : 'доступен, нажмите чтобы отметить пройденным'),
   };
 }
 
-function updateProgressButton(btn, ch, key) {
-  const st = progressBtnState(ch, key);
+function updateProgressButton(btn, ch, g) {
+  const st = progressBtnState(ch, g);
   btn.className = st.cls;
-  btn.textContent = st.text;
   btn.title = st.title;
   btn.disabled = !st.can;
+  if (!btn.firstChild) {
+    if (g.icon && document.getElementById('raid-' + g.icon)) {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'raid-icon');
+      svg.setAttribute('aria-hidden', 'true');
+      const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+      use.setAttribute('href', '#raid-' + g.icon);
+      svg.appendChild(use);
+      btn.appendChild(svg);
+    } else {
+      btn.textContent = (g.name || '?').slice(0, 1);
+    }
+  }
 }
 
 const doneMarks   = new Map(); // character_id|raid_key -> completed
@@ -1232,17 +1257,39 @@ async function loadRaidBoard() {
   raidBoardLoaded = true;
   raidBoardDirty = false;
   body.innerHTML = '';
+  if (state.raidTypes.length === 0) {
+    const r = await getRaidTypes();
+    if (r.raidTypes) state.raidTypes = r.raidTypes;
+  }
+  const raids = boardRaids();
+  const head = $('raid-board-head');
+  if (head) {
+    head.innerHTML = '<th>Персонаж</th><th>Сбор золота</th>';
+    for (const g of raids) {
+      const th = document.createElement('th');
+      th.textContent = g.name;
+      th.title = 'От ' + g.minIlvl + ' ГС';
+      head.appendChild(th);
+    }
+  }
   const ids = state.characters.map(c => c.id);
   let progress = [];
   if (ids.length) {
     const q = await dragonsSupabase.from('character_raid_progress').select('character_id,raid_key,completed').in('character_id', ids);
-    if (q.error) { body.innerHTML = '<tr><td colspan="6">Ошибка загрузки отметок. Проверь RLS таблицы прогресса.</td></tr>'; return; }
+    if (q.error) { body.innerHTML = '<tr><td colspan="' + (raids.length + 2) + '">Ошибка загрузки отметок. Проверь RLS таблицы прогресса.</td></tr>'; return; }
     progress = q.data || [];
   }
   doneMarks.clear();
-  for (const p of progress) doneMarks.set(p.character_id + '|' + p.raid_key, p.completed);
+  // Старые отметки хранились по названию рейда — читаем их как запасные,
+  // а отметки по icon_id (новые) имеют приоритет.
+  const keyByName = new Map(raids.map(g => [g.name, g.key]));
+  for (const p of progress) {
+    const k = keyByName.get(p.raid_key);
+    if (k && k !== p.raid_key) doneMarks.set(p.character_id + '|' + k, p.completed);
+  }
+  for (const p of progress) if (!keyByName.has(p.raid_key) || keyByName.get(p.raid_key) === p.raid_key) doneMarks.set(p.character_id + '|' + p.raid_key, p.completed);
   signedChars.clear();
-  for (const r of state.raids) for (const s of r.signups || []) if (s.member_id === state.member.id) signedChars.add(s.character_id + '|' + (r.raid_types?.name));
+  for (const r of state.raids) for (const s of r.signups || []) if (s.member_id === state.member.id) signedChars.add(s.character_id + '|' + (r.raid_types?.icon_id || r.raid_types?.name));
 
   const chars = sortedCharacters(); // тот же порядок, что и в списке «Мои персонажи»
   // Нормализуем sort_order в памяти по фактическому порядку (i+1), чтобы он
@@ -1277,33 +1324,32 @@ async function loadRaidBoard() {
     coinCell.appendChild(coin);
     tr.appendChild(coinCell);
 
-    let all = true;
-    for (const key of BOARD_KEYS) {
+    for (const g of raids) {
+      const key = g.key;
       const td = document.createElement('td');
       td.className = 'progress-cell';
       const btn = document.createElement('button');
-      updateProgressButton(btn, ch, key);
-      if (doneMarks.get(ch.id + '|' + key) !== true) all = false;
+      updateProgressButton(btn, ch, g);
       btn.onclick = async () => {
         const nowDone = doneMarks.get(ch.id + '|' + key) === true;
         const next = !nowDone;
         // Оптимистично меняем только эту кнопку — табличка не перезагружается
         doneMarks.set(ch.id + '|' + key, next);
-        updateProgressButton(btn, ch, key);
-        tr.classList.toggle('all-done', BOARD_KEYS.every(k => doneMarks.get(ch.id + '|' + k) === true));
+        updateProgressButton(btn, ch, g);
+        tr.classList.toggle('all-done', allDone(ch));
         const { error } = await dragonsSupabase.from('character_raid_progress')
           .upsert({ character_id: ch.id, raid_key: key, completed: next, updated_at: new Date().toISOString() }, { onConflict: 'character_id,raid_key' });
         if (error) {
           showToast('Не удалось сохранить отметку', 'error');
           doneMarks.set(ch.id + '|' + key, nowDone); // откат
-          updateProgressButton(btn, ch, key);
-          tr.classList.toggle('all-done', BOARD_KEYS.every(k => doneMarks.get(ch.id + '|' + k) === true));
+          updateProgressButton(btn, ch, g);
+          tr.classList.toggle('all-done', allDone(ch));
         }
       };
       td.appendChild(btn);
       tr.appendChild(td);
     }
-    if (all) tr.classList.add('all-done');
+    if (allDone(ch)) tr.classList.add('all-done');
 
     tr.addEventListener('dragstart', e => { e.dataTransfer.setData('text/dragon-character', ch.id); tr.classList.add('dragging'); });
     tr.addEventListener('dragend', () => tr.classList.remove('dragging'));
@@ -1345,6 +1391,21 @@ async function loadRaidBoard() {
 }
 
 setupTabs();
+
+// «Очистить»: снимает все зелёные отметки о прохождении у моих персонажей
+$('raid-clear-btn')?.addEventListener('click', async () => {
+  const ids = state.characters.map(c => c.id).filter(id => !String(id).startsWith('temp_'));
+  const marked = [...doneMarks.entries()].filter(([, v]) => v === true);
+  if (!ids.length || !marked.length) { showToast('Отмеченных рейдов нет', 'info'); return; }
+  if (!confirm('Снять все отметки о пройденных рейдах?')) return;
+  const { error } = await dragonsSupabase.from('character_raid_progress')
+    .update({ completed: false, updated_at: new Date().toISOString() })
+    .in('character_id', ids).eq('completed', true);
+  if (error) { showToast('Не удалось очистить отметки', 'error'); return; }
+  doneMarks.clear();
+  loadRaidBoard();
+  showToast('Отметки сняты', 'success');
+});
 
 // ------------------------------------------------------------
 // СТАРТ
