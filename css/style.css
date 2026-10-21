@@ -1400,3 +1400,9 @@ SVG-ГРАДИЕНТЫ (скрытые)
 .raid-board .progress-toggle.signed{color:#f0c63c;background:transparent;border:0}
 .raid-board .progress-toggle.done{color:#46d17a;background:transparent;border:0;filter:drop-shadow(0 0 6px #46d17a55)}
 .raid-board .progress-toggle.blocked{color:#d94a46;background:transparent;opacity:.75;cursor:not-allowed}
+
+/* ===== Сворачивание карточек рейдов ===== */
+.raid-card{position:relative}
+.raid-card-toggle{position:absolute;top:0;left:0;right:0;height:18px;padding:0;border:0;background:transparent;color:#e6c16c;cursor:pointer;opacity:0;display:flex;align-items:center;justify-content:center;transition:opacity .15s;z-index:2}
+.raid-card-toggle:hover,.raid-card-toggle:focus-visible{opacity:.55}
+.raid-card-toggle svg{width:16px;height:16px;display:block;pointer-events:none}

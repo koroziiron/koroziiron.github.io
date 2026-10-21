@@ -791,10 +791,29 @@ function formatDayLabel(date) {
   return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]}`;
 }
 
+// Развёрнутые рейды (по умолчанию все свёрнуты); хранится между перерисовками
+const expandedRaids = new Set();
+
 function buildRaidCard(raid) {
   const card = document.createElement('div');
   card.className = 'raid-card';
   card.dataset.raidId = raid.id;
+  const expanded = expandedRaids.has(String(raid.id));
+  card.classList.toggle('collapsed', !expanded);
+
+  // Стрелка сворачивания: ▼ — рейд развёрнут, ▲ — свёрнут (видны только мои персонажи)
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'raid-card-toggle';
+  toggle.title = expanded ? 'Свернуть' : 'Развернуть';
+  toggle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + (expanded ? 'M5 9l7 7 7-7' : 'M5 15l7-7 7 7') + '" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  toggle.addEventListener('click', e => {
+    e.stopPropagation();
+    const id = String(raid.id);
+    if (expandedRaids.has(id)) expandedRaids.delete(id); else expandedRaids.add(id);
+    renderSchedule();
+  });
+  card.appendChild(toggle);
 
   const rt = raid.raid_types;
   const signupsNow = raid.signups || [];
@@ -811,7 +830,7 @@ function buildRaidCard(raid) {
   title.textContent = rt.name;
   if (state.member && (state.member.nickname === 'korozii' || raid.created_by === state.member.id)) {
     title.classList.add('raid-card-title-editable');
-    title.title = 'Нажми, чтобы изменить рейд и день';
+    title.title = 'Нажми, чтобы изменить день и время';
     title.tabIndex = 0;
     title.setAttribute('role', 'button');
     title.addEventListener('click', e => {
@@ -865,6 +884,8 @@ function buildRaidCard(raid) {
   list.className = 'raid-card-signups';
 
   for (const s of signupsNow) {
+    // Свёрнутый рейд: оставляем только своих персонажей
+    if (!expanded && !(state.member && s.member_id === state.member.id)) continue;
     const row = document.createElement('div');
     row.className = 'raid-signup-row';
     if (state.member && s.member_id === state.member.id) row.classList.add('mine');
@@ -995,6 +1016,16 @@ function validateSignup(raid, character) {
     return 'Рейд заполнен';
   }
 
+  // Состав по ролям: на 8 — 2 саппорта и 6 ДД, на 4 — 1 саппорт и 3 ДД
+  const maxSup = Math.floor(raid.max_players / 4);
+  const maxDps = raid.max_players - maxSup;
+  const roleOf = x => (x?.classes?.role || x?.role || 'DPS') === 'SUPPORT' ? 'SUPPORT' : 'DPS';
+  const isSup = roleOf(character) === 'SUPPORT';
+  const supCount = signupsNow.filter(x => roleOf(x.characters) === 'SUPPORT').length;
+  const dpsCount = signupsNow.length - supCount;
+  if (isSup && supCount >= maxSup) return `На рейде уже ${supCount}/${maxSup} саппортов`;
+  if (!isSup && dpsCount >= maxDps) return `На рейде уже ${dpsCount}/${maxDps} ДД`;
+
   // Тот же игрок уже на этом рейде (через любого персонажа)
   const sameMember = (raid.signups || []).some(s => s.member_id === state.member.id);
   if (sameMember) {
@@ -1029,13 +1060,25 @@ function closeRaidModal() {
 function openRaidModal(raid = null) {
   state.editingRaidId = raid?.id || null;
   state.selectedRaidWeekday = Number(raid?.weekday || 3);
-  if (!raid && $('raid-time-input')) $('raid-time-input').value = '20:00';
   $('modal-raid').classList.add('active');
+  $('raid-create-btn').textContent = raid ? 'Сохранить изменения' : 'Создать рейд';
+  if (raid) {
+    // Редактирование: тип и сложность рейда не меняются — только день и время
+    const rt = raid.raid_types || state.raidTypes.find(x => x.id === raid.raid_type_id);
+    state.pendingRaidType = rt;
+    $('raid-step-1').classList.remove('active');
+    $('raid-step-2').classList.remove('active');
+    $('raid-step-3').classList.add('active');
+    $('raid-mode-title').textContent = `${rt.name} — ${rt.mode}`;
+    $('raid-required-ilvl').textContent = rt.required_ilvl;
+    if ($('raid-time-input')) $('raid-time-input').value = (raid.start_time || '20:00').slice(0, 5);
+    renderWeekdayPicker();
+    return;
+  }
+  if ($('raid-time-input')) $('raid-time-input').value = '20:00';
   $('raid-step-1').classList.add('active');
   $('raid-step-2').classList.remove('active');
   $('raid-step-3').classList.remove('active');
-  $('raid-create-btn').textContent = raid ? 'Сохранить изменения' : 'Создать рейд';
-  $('raid-time-row')?.classList.toggle('hidden', !!raid);
   renderRaidTypeGrid();
 }
 
@@ -1107,9 +1150,8 @@ $('raid-create-btn').addEventListener('click', async () => {
   }
   if (state.editingRaidId) {
     const r = await updateRaid(state.editingRaidId, {
-      raid_type_id: state.pendingRaidType.id,
       weekday: state.selectedRaidWeekday,
-      max_players: state.pendingRaidType.size,
+      start_time: $('raid-time-input').value || '20:00',
     });
     if (r.error) {
       showToast('Не удалось изменить рейд', 'error');

@@ -178,12 +178,14 @@ export async function getRaidsInRange(){const {data,error}=await supabase.from('
 export async function createRaid({raid_type_id,weekday,start_time,max_players,created_by}){const {data,error}=await supabase.from('raids').insert({raid_type_id,weekday,start_time,max_players,status:'open',created_by}).select().single();if(error)return {error};return {raid:data};}
 
 
-export async function updateRaid(raidId, { raid_type_id, weekday, max_players }) {
+export async function updateRaid(raidId, { weekday, start_time }) {
+  const patch = { weekday };
+  if (start_time) patch.start_time = start_time;
   const { data, error } = await supabase
     .from('raids')
-    .update({ raid_type_id, weekday, max_players })
+    .update(patch)
     .eq('id', raidId)
-    .select('id,weekday,raid_type_id')
+    .select('id,weekday,start_time')
     .single();
 
   if (error) return { error };
