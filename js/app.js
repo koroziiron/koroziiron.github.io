@@ -1280,14 +1280,13 @@ async function loadRaidBoard() {
     progress = q.data || [];
   }
   doneMarks.clear();
-  // Старые отметки хранились по названию рейда — читаем их как запасные,
-  // а отметки по icon_id (новые) имеют приоритет.
+  // В БД raid_key хранится по названию рейда (как раньше, там могут быть
+  // ограничения на значения) — переводим в ключ колонки (icon_id).
   const keyByName = new Map(raids.map(g => [g.name, g.key]));
   for (const p of progress) {
-    const k = keyByName.get(p.raid_key);
-    if (k && k !== p.raid_key) doneMarks.set(p.character_id + '|' + k, p.completed);
+    const k = keyByName.get(p.raid_key) || p.raid_key;
+    doneMarks.set(p.character_id + '|' + k, p.completed);
   }
-  for (const p of progress) if (!keyByName.has(p.raid_key) || keyByName.get(p.raid_key) === p.raid_key) doneMarks.set(p.character_id + '|' + p.raid_key, p.completed);
   signedChars.clear();
   for (const r of state.raids) for (const s of r.signups || []) if (s.member_id === state.member.id) signedChars.add(s.character_id + '|' + (r.raid_types?.icon_id || r.raid_types?.name));
 
@@ -1338,8 +1337,9 @@ async function loadRaidBoard() {
         updateProgressButton(btn, ch, g);
         tr.classList.toggle('all-done', allDone(ch));
         const { error } = await dragonsSupabase.from('character_raid_progress')
-          .upsert({ character_id: ch.id, raid_key: key, completed: next, updated_at: new Date().toISOString() }, { onConflict: 'character_id,raid_key' });
+          .upsert({ character_id: ch.id, raid_key: g.name, completed: next, updated_at: new Date().toISOString() }, { onConflict: 'character_id,raid_key' });
         if (error) {
+          console.error('character_raid_progress upsert failed:', error);
           showToast('Не удалось сохранить отметку', 'error');
           doneMarks.set(ch.id + '|' + key, nowDone); // откат
           updateProgressButton(btn, ch, g);
