@@ -179,6 +179,8 @@ async function enterMain() {
   const raidsPromise = loadRaids(true);
   await Promise.all([classesPromise, raidTypesPromise, raidsPromise]);
   renderSchedule();
+  // Отметки прохождения нужны для иконок рейдов в списке персонажей
+  void loadProgressMarks().then(refreshCharRaidIcons);
 }
 
 // ------------------------------------------------------------
@@ -450,6 +452,12 @@ card.draggable = true;  // ← НОВОЕ
   
   card.appendChild(iconWrap);
   card.appendChild(info);
+
+  // Справа — иконки рейдов: жёлтые — записан, зелёные — пройден (только показ)
+  const raidsZone = document.createElement('div');
+  raidsZone.className = 'char-raids';
+  if (!isNew) fillCharRaids(raidsZone, ch);
+  card.appendChild(raidsZone);
   return card;
 }
 
@@ -732,6 +740,8 @@ async function loadRaids(silent = false) {
       return false;
     }
     state.raids = r.raids || [];
+    rebuildSignedChars();
+    refreshCharRaidIcons();
     return true;
   } catch {
     if (!silent) showToast('Не удалось загрузить рейды', 'error');
@@ -1270,24 +1280,71 @@ function progressBtnState(ch, g) {
   };
 }
 
+// Иконка рейда: особая из спрайта (raid-<icon_id>) или обычный чекбокс
+function makeRaidIcon(g, cls = 'raid-icon') {
+  const has = g.icon && document.getElementById('raid-' + g.icon);
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', cls);
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', '#raid-' + (has ? g.icon : 'generic'));
+  svg.appendChild(use);
+  return svg;
+}
+
 function updateProgressButton(btn, ch, g) {
   const st = progressBtnState(ch, g);
   btn.className = st.cls;
   btn.title = st.title;
   btn.disabled = !st.can;
-  if (!btn.firstChild) {
-    if (g.icon && document.getElementById('raid-' + g.icon)) {
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('class', 'raid-icon');
-      svg.setAttribute('aria-hidden', 'true');
-      const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-      use.setAttribute('href', '#raid-' + g.icon);
-      svg.appendChild(use);
-      btn.appendChild(svg);
-    } else {
-      btn.textContent = (g.name || '?').slice(0, 1);
-    }
+  if (!btn.firstChild) btn.appendChild(makeRaidIcon(g));
+}
+
+// Иконки рейдов в карточке «Мои персонажи»: записан (жёлтый) / пройден (зелёный)
+function fillCharRaids(el, ch) {
+  el.textContent = '';
+  for (const g of boardRaids()) {
+    const done = doneMarks.get(ch.id + '|' + g.key) === true;
+    const signed = signedChars.has(ch.id + '|' + g.key);
+    if (!done && !signed) continue;
+    const item = document.createElement('span');
+    item.className = 'char-raid ' + (done ? 'done' : 'signed');
+    item.title = g.name + (done ? ' — пройден' : ' — записан');
+    item.appendChild(makeRaidIcon(g, 'char-raid-icon'));
+    el.appendChild(item);
   }
+}
+
+function refreshCharRaidIcons() {
+  document.querySelectorAll('#characters-list .char-card').forEach(card => {
+    const ch = state.characters.find(c => String(c.id) === card.dataset.charId);
+    const zone = card.querySelector('.char-raids');
+    if (ch && zone) fillCharRaids(zone, ch);
+  });
+}
+
+function rebuildSignedChars() {
+  signedChars.clear();
+  if (!state.member) return;
+  for (const r of state.raids) for (const s of r.signups || []) {
+    if (s.member_id === state.member.id) signedChars.add(s.character_id + '|' + (r.raid_types?.icon_id || r.raid_types?.name));
+  }
+}
+
+// Загрузка отметок «пройден» из БД. raid_key в БД хранится по названию рейда.
+async function loadProgressMarks() {
+  const ids = state.characters.map(c => c.id).filter(id => !String(id).startsWith('temp_'));
+  let progress = [];
+  if (ids.length) {
+    const q = await dragonsSupabase.from('character_raid_progress').select('character_id,raid_key,completed').in('character_id', ids);
+    if (q.error) return { error: q.error };
+    progress = q.data || [];
+  }
+  doneMarks.clear();
+  const keyByName = new Map(boardRaids().map(g => [g.name, g.key]));
+  for (const p of progress) doneMarks.set(p.character_id + '|' + (keyByName.get(p.raid_key) || p.raid_key), p.completed);
+  rebuildSignedChars();
+  return {};
 }
 
 const doneMarks   = new Map(); // character_id|raid_key -> completed
@@ -1299,10 +1356,9 @@ async function loadRaidBoard() {
   raidBoardLoaded = true;
   raidBoardDirty = false;
   body.innerHTML = '';
-  if (state.raidTypes.length === 0) {
-    const r = await getRaidTypes();
-    if (r.raidTypes) state.raidTypes = r.raidTypes;
-  }
+  // Справочник рейдов обновляем при каждом открытии: новые рейды из БД появятся сами
+  const fresh = await getRaidTypes();
+  if (fresh.raidTypes) state.raidTypes = fresh.raidTypes;
   const raids = boardRaids();
   const head = $('raid-board-head');
   if (head) {
@@ -1314,24 +1370,9 @@ async function loadRaidBoard() {
       head.appendChild(th);
     }
   }
-  const ids = state.characters.map(c => c.id);
-  let progress = [];
-  if (ids.length) {
-    const q = await dragonsSupabase.from('character_raid_progress').select('character_id,raid_key,completed').in('character_id', ids);
-    if (q.error) { body.innerHTML = '<tr><td colspan="' + (raids.length + 2) + '">Ошибка загрузки отметок. Проверь RLS таблицы прогресса.</td></tr>'; return; }
-    progress = q.data || [];
-  }
-  doneMarks.clear();
-  // В БД raid_key хранится по названию рейда (как раньше, там могут быть
-  // ограничения на значения) — переводим в ключ колонки (icon_id).
-  const keyByName = new Map(raids.map(g => [g.name, g.key]));
-  for (const p of progress) {
-    const k = keyByName.get(p.raid_key) || p.raid_key;
-    doneMarks.set(p.character_id + '|' + k, p.completed);
-  }
-  signedChars.clear();
-  for (const r of state.raids) for (const s of r.signups || []) if (s.member_id === state.member.id) signedChars.add(s.character_id + '|' + (r.raid_types?.icon_id || r.raid_types?.name));
-
+  const pr = await loadProgressMarks();
+  if (pr.error) { body.innerHTML = '<tr><td colspan="' + (raids.length + 2) + '">Ошибка загрузки отметок.</td></tr>'; return; }
+  refreshCharRaidIcons();
   const chars = sortedCharacters(); // тот же порядок, что и в списке «Мои персонажи»
   // Нормализуем sort_order в памяти по фактическому порядку (i+1), чтобы он
   // всегда совпадал с табличкой. В БД пишем только явно новые значения порядка
@@ -1378,6 +1419,7 @@ async function loadRaidBoard() {
         doneMarks.set(ch.id + '|' + key, next);
         updateProgressButton(btn, ch, g);
         tr.classList.toggle('all-done', allDone(ch));
+        refreshCharRaidIcons();
         const { error } = await dragonsSupabase.from('character_raid_progress')
           .upsert({ character_id: ch.id, raid_key: g.name, completed: next, updated_at: new Date().toISOString() }, { onConflict: 'character_id,raid_key' });
         if (error) {
@@ -1386,6 +1428,7 @@ async function loadRaidBoard() {
           doneMarks.set(ch.id + '|' + key, nowDone); // откат
           updateProgressButton(btn, ch, g);
           tr.classList.toggle('all-done', allDone(ch));
+          refreshCharRaidIcons();
         }
       };
       td.appendChild(btn);
@@ -1393,46 +1436,94 @@ async function loadRaidBoard() {
     }
     if (allDone(ch)) tr.classList.add('all-done');
 
-    tr.addEventListener('dragstart', e => { e.dataTransfer.setData('text/dragon-character', ch.id); tr.classList.add('dragging'); });
-    tr.addEventListener('dragend', () => tr.classList.remove('dragging'));
-    tr.addEventListener('dragover', e => e.preventDefault());
-    tr.addEventListener('drop', async e => {
-      e.preventDefault();
-      // Тащим карточку из списка «Мои персонажи»? (другой MIME, чем у строк таблички)
-      const fromList = e.dataTransfer.getData('text/character-id');
-      if (fromList) return; // перестановка списком здесь не нужна — игнорируем
-      const moving = e.dataTransfer.getData('text/dragon-character');
-      if (!moving || String(moving) === String(ch.id)) return;
-      const order = [...body.querySelectorAll('tr[data-id]')].map(x => x.dataset.id);
-      const a = order.indexOf(String(moving)), z = order.indexOf(String(ch.id));
-      if (a < 0 || z < 0) return;
-      order.splice(z, 0, order.splice(a, 1)[0]);
-
-      // 1. Применяем новый порядок СРАЗУ и локально, не дожидаясь ответа БД:
-      //    перестраиваем строки таблички в DOM
-      for (const id of order) body.appendChild(body.querySelector('tr[data-id="' + id + '"]'));
-      //    обновляем sort_order в памяти по новому порядку
-      for (let i = 0; i < order.length; i++) {
-        const c = state.characters.find(x => String(x.id) === order[i]);
-        if (c) c.sort_order = i + 1;
-      }
-      // 2. Перерисовываем список «Мои персонажи» в новом порядке
-      //    (sortedCharacters() уже учитывает обновлённый sort_order)
-      renderCharacters();
-      raidBoardDirty = false;
-
-      // 3. Сохраняем порядок в БД в фоне; при ошибке ничего не откатываем —
-      //    локальный порядок остаётся, а при следующей загрузке таблички он
-      //    будет зафиксирован заново
-      for (let i = 0; i < order.length; i++) {
-        await dragonsSupabase.from('characters').update({ sort_order: i + 1 }).eq('id', order[i]);
-      }
+    tr.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/dragon-character', ch.id);
+      e.dataTransfer.effectAllowed = 'move';
+      boardDrag = { id: String(ch.id), startOrder: boardOrder(body), dropped: false };
+      requestAnimationFrame(() => tr.classList.add('dragging'));
+    });
+    tr.addEventListener('dragend', () => {
+      tr.classList.remove('dragging');
+      // Отпустили вне таблицы / отмена — возвращаем прежний порядок
+      if (boardDrag && !boardDrag.dropped) restoreBoardOrder(body, boardDrag.startOrder);
+      boardDrag = null;
     });
     body.appendChild(tr);
   }
 }
 
 setupTabs();
+
+// ------------------------------------------------------------
+// ПЕРЕТАСКИВАНИЕ СТРОК ТАБЛИЧКИ (как иконки на смартфоне)
+// Пока строку тянут, остальные плавно расступаются и освобождают место,
+// на которое она встанет. Порядок фиксируется при отпускании.
+// ------------------------------------------------------------
+let boardDrag = null; // { id, startOrder, dropped }
+const boardOrder = body => [...body.querySelectorAll('tr[data-id]')].map(x => x.dataset.id);
+
+function animateRowMove(body, mutate) {
+  const rows = [...body.querySelectorAll('tr[data-id]')];
+  const first = new Map(rows.map(r => [r, r.getBoundingClientRect().top])); // с учётом текущей анимации
+  mutate();
+  for (const r of rows) { r.style.transition = 'none'; r.style.transform = ''; }
+  const moves = [];
+  for (const r of rows) {
+    const dy = first.get(r) - r.getBoundingClientRect().top;
+    if (Math.abs(dy) > 0.5) { r.style.transform = 'translateY(' + dy + 'px)'; moves.push(r); }
+  }
+  if (!moves.length) return;
+  void body.offsetHeight; // reflow
+  for (const r of moves) { r.style.transition = 'transform .2s ease'; r.style.transform = ''; }
+}
+
+function restoreBoardOrder(body, order) {
+  if (boardOrder(body).join() === order.join()) return;
+  animateRowMove(body, () => {
+    for (const id of order) body.appendChild(body.querySelector('tr[data-id="' + id + '"]'));
+  });
+}
+
+async function commitBoardOrder(body) {
+  const order = boardOrder(body);
+  if (order.join() === boardDrag.startOrder.join()) return;
+  // 1. Локально и сразу: порядок в памяти и список «Мои персонажи»
+  for (let i = 0; i < order.length; i++) {
+    const c = state.characters.find(x => String(x.id) === order[i]);
+    if (c) c.sort_order = i + 1;
+  }
+  renderCharacters();
+  raidBoardDirty = false;
+  // 2. В БД — в фоне; при ошибке локальный порядок остаётся
+  const results = await Promise.all(order.map((id, i) =>
+    dragonsSupabase.from('characters').update({ sort_order: i + 1 }).eq('id', id)));
+  if (results.some(r => r.error)) showToast('Не удалось сохранить порядок', 'error');
+}
+
+(function setupBoardDnD() {
+  const body = $('raid-board-body');
+  if (!body) return;
+  body.addEventListener('dragover', e => {
+    if (!boardDrag) return; // тащат не строку таблички (например, карточку в рейд)
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const dragged = body.querySelector('tr[data-id="' + boardDrag.id + '"]');
+    const over = e.target.closest?.('tr[data-id]');
+    if (!dragged || !over || over === dragged) return;
+    // Позицию курсора сравниваем с раскладкой (offsetTop), а не с анимируемым положением
+    const table = body.closest('table');
+    const y = e.clientY - table.getBoundingClientRect().top;
+    const after = y > over.offsetTop + over.offsetHeight / 2;
+    if (after ? over.nextElementSibling === dragged : over.previousElementSibling === dragged) return;
+    animateRowMove(body, () => body.insertBefore(dragged, after ? over.nextElementSibling : over));
+  });
+  body.addEventListener('drop', async e => {
+    if (!boardDrag) return;
+    e.preventDefault();
+    boardDrag.dropped = true;
+    await commitBoardOrder(body);
+  });
+})();
 
 // «Очистить»: снимает все зелёные отметки о прохождении у моих персонажей
 $('raid-clear-btn')?.addEventListener('click', async () => {

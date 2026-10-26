@@ -1406,3 +1406,25 @@ SVG-ГРАДИЕНТЫ (скрытые)
 .raid-card-toggle{position:absolute;top:0;left:0;right:0;height:18px;padding:0;border:0;background:transparent;color:#e6c16c;cursor:pointer;opacity:0;display:flex;align-items:center;justify-content:center;transition:opacity .15s;z-index:2}
 .raid-card-toggle:hover,.raid-card-toggle:focus-visible{opacity:.55}
 .raid-card-toggle svg{width:16px;height:16px;display:block;pointer-events:none}
+
+/* ===== Карточка персонажа: БС под ГС, справа — иконки рейдов ===== */
+.char-stats{flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:2px;width:auto}
+.char-stats > span:last-child{margin-left:0;padding-right:0}
+.char-raids{display:grid;grid-template-rows:repeat(2,22px);grid-auto-flow:column;grid-auto-columns:22px;gap:8px 8px;align-content:center;justify-content:end;min-width:0;flex:none;pointer-events:none}
+.char-raids:empty{display:none}
+.char-raid{display:block;width:22px;height:22px}
+.char-raid-icon{width:100%;height:100%;display:block;fill:currentColor}
+.char-raid.signed{color:#f0c63c}
+.char-raid.done{color:#46d17a;filter:drop-shadow(0 0 4px #46d17a55)}
+
+/* ===== Вкладка «Рейды»: воздух под вкладками и вокруг кнопки «Очистить» ===== */
+.dragons-tabs{padding-bottom:12px}
+.raids-board-view{padding:26px 22px 22px}
+.raids-board-header{margin-bottom:20px}
+.raids-board-header h2{margin:0}
+.raid-board-scroll{margin-top:4px}
+
+/* ===== Перетаскивание строк: место освобождается, строка — «призрак» на новом месте ===== */
+.raid-board tbody tr{will-change:transform}
+.raid-board tr.dragging{opacity:.6;background:#d4a74618;outline:1px dashed #d4a74688;outline-offset:-2px}
+.raid-board tr.dragging td{background:transparent}
