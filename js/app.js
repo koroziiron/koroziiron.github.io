@@ -1186,6 +1186,20 @@ function buildRaidCard(raid) {
   return card;
 }
 
+// Минимальный перерыв между рейдами одного игрока в один день
+const MIN_RAID_GAP_MIN = 30;
+const toMinutes = t => { const [h, m] = String(t || '0:0').split(':'); return Number(h) * 60 + Number(m); };
+function findTimeClash(raid) {
+  if (!state.member || !raid.start_time) return null;
+  return state.raids.find(r =>
+    r.id !== raid.id &&
+    Number(r.weekday) === Number(raid.weekday) &&
+    r.start_time &&
+    Math.abs(toMinutes(r.start_time) - toMinutes(raid.start_time)) < MIN_RAID_GAP_MIN &&
+    (r.signups || []).some(s => s.member_id === state.member.id)
+  ) || null;
+}
+
 // Валидация записи
 function validateSignup(raid, character) {
   const rt = raid.raid_types;
@@ -1217,6 +1231,12 @@ function validateSignup(raid, character) {
   const dpsCount = signupsNow.length - supCount;
   if (isSup && supCount >= maxSup) return `На рейде уже ${supCount}/${maxSup} саппортов`;
   if (!isSup && dpsCount >= maxDps) return `На рейде уже ${dpsCount}/${maxDps} ДД`;
+
+  // Один игрок не может быть на двух рейдах в один день с разницей меньше 30 минут
+  const clash = findTimeClash(raid);
+  if (clash) {
+    return `Пересечение по времени: вы уже записаны на «${clash.raid_types?.name}» в ${String(clash.start_time || '').slice(0, 5)}. Между рейдами в один день должно быть не менее ${MIN_RAID_GAP_MIN} минут`;
+  }
 
   // Тот же игрок уже на этом рейде (через любого персонажа)
   const sameMember = (raid.signups || []).some(s => s.member_id === state.member.id);
@@ -1378,7 +1398,7 @@ $('raid-create-btn').addEventListener('click', async () => {
       min_combat_power: parseInt($('raid-min-cp').value, 10) || 0,
     });
     if (r.error) {
-      showToast('Не удалось изменить рейд', 'error');
+      showToast(r.error.code === 'P0001' && r.error.message ? r.error.message : 'Не удалось изменить рейд', 'error');
       console.error(r.error);
       return;
     }
