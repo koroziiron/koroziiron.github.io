@@ -19,6 +19,7 @@ import {
   supabase as dragonsSupabase,
 } from './api.js';
 import { initProfile, renderProfile } from './profile.js';
+import './scroll-hints.js';
 import { refreshCharactersStats } from './stats.js';
 window.dragonsSupabase = dragonsSupabase;
 

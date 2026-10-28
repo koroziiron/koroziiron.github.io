@@ -1537,3 +1537,18 @@ SVG-ГРАДИЕНТЫ (скрытые)
 .team-dialog-leader{display:flex;flex-direction:column;gap:10px;border-left:1px solid var(--border);padding-left:22px}
 @media (max-width:720px){.team-dialog-leader{border-left:0;padding-left:0;border-top:1px solid var(--border);padding-top:16px}}
 .disband-btn{margin-top:auto}
+
+/* ===== Скрываем системные полосы прокрутки везде (прокрутка работает) ===== */
+html, body, * { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+/* ===== Каменные стрелки прокрутки в окнах ===== */
+.scroll-arrow{position:absolute;width:38px;height:28px;transform:translateX(-50%);z-index:20;pointer-events:none;opacity:0;transition:opacity .25s ease}
+.scroll-arrow.on{opacity:1}
+.scroll-arrow svg{width:100%;height:100%;display:block;overflow:visible;animation:scrollGlow 2600ms ease-in-out infinite}
+.scroll-arrow.up svg{transform:rotate(180deg)}
+@keyframes scrollGlow{
+  0%,100%{filter:drop-shadow(0 0 5px rgba(90,223,122,.10)) drop-shadow(0 0 2px rgba(90,223,122,.10))}
+  50%{filter:drop-shadow(0 0 6px rgba(90,223,122,.40)) drop-shadow(0 0 2px rgba(90,223,122,.40))}
+}
+@media (prefers-reduced-motion:reduce){.scroll-arrow svg{animation:none;filter:drop-shadow(0 0 5px rgba(90,223,122,.25))}}
