@@ -1428,3 +1428,112 @@ SVG-ГРАДИЕНТЫ (скрытые)
 .raid-board tbody tr{will-change:transform}
 .raid-board tr.dragging{opacity:.6;background:#d4a74618;outline:1px dashed #d4a74688;outline-offset:-2px}
 .raid-board tr.dragging td{background:transparent}
+
+/* ===== Расписание: панель инструментов и фильтры ===== */
+.schedule-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.tool-btn{background:var(--bg-card);border:1px solid var(--border-strong);color:var(--text-muted);border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;font-family:var(--font-body);cursor:pointer;transition:border-color .2s,color .2s,background .2s;white-space:nowrap}
+.tool-btn:hover:not(:disabled){color:var(--gold-hi);border-color:var(--gold);background:var(--bg-card-hover)}
+.tool-btn:disabled{opacity:.4;cursor:not-allowed}
+.raid-add-btn:disabled{opacity:.35;cursor:not-allowed}
+.filter-wrap{position:relative}
+.filter-pop{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;max-height:320px;overflow:auto;background:var(--bg-panel);border:1px solid var(--border-strong);border-radius:var(--radius-sm);box-shadow:0 12px 30px rgba(0,0,0,.6);padding:6px;z-index:50}
+.filter-opt{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:5px;cursor:pointer;color:var(--text-primary);font-size:13px}
+.filter-opt:hover{background:var(--bg-card-hover)}
+.filter-opt input{accent-color:var(--gold);width:15px;height:15px;margin:0}
+.filter-opt:first-child{border-bottom:1px solid var(--border);margin-bottom:4px;border-radius:5px 5px 0 0;color:var(--gold-hi)}
+
+/* ===== Карточка рейда: КП и требуемый БС ===== */
+.raid-card-meta{display:flex;flex-wrap:wrap;gap:6px;margin:-2px 0 8px}
+.raid-chip{font-size:11px;letter-spacing:.5px;padding:2px 8px;border-radius:20px;border:1px solid var(--border-strong);color:var(--text-muted);background:var(--bg-input)}
+.raid-chip-bs{color:#e07a7a;border-color:#6a2a2a}
+.raid-chip-team{color:var(--gold-hi);border-color:#5a4a1a}
+
+/* ===== Модалка рейда: КП, доп. параметры ===== */
+.raid-team-row{margin:14px 0 4px}
+.raid-team-select{width:100%;background:var(--bg-input);border:1px solid var(--border-strong);border-radius:var(--radius-sm);padding:12px 14px;color:var(--text-primary);font-family:var(--font-body);font-size:14px;outline:none}
+.raid-adv-toggle{display:flex;align-items:center;justify-content:center;width:100%;height:24px;margin:8px 0 2px;background:transparent;border:0;color:var(--text-muted);cursor:pointer;opacity:.5;transition:opacity .15s}
+.raid-adv-toggle:hover{opacity:.9}
+.raid-adv-toggle svg{width:18px;height:18px;transition:transform .2s}
+.raid-adv-toggle.open svg{transform:rotate(180deg)}
+.raid-adv{margin:4px 0 14px}
+.raid-adv .raid-time-input{width:100%;box-sizing:border-box}
+
+/* ===== Профиль ===== */
+.profile-view{padding:26px 22px 40px}
+.profile-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start;max-width:1100px}
+@media (max-width:820px){.profile-grid{grid-template-columns:1fr}}
+.profile-card{background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);padding:22px;display:flex;flex-direction:column;gap:10px}
+.profile-h{font-family:var(--font-display);font-size:16px;letter-spacing:2px;color:var(--gold-hi);margin:0 0 6px;text-transform:uppercase}
+.profile-h-sub{margin-top:18px}
+.profile-label{color:var(--text-muted);font-size:12px;letter-spacing:1px;text-transform:uppercase;margin-top:6px}
+.profile-input{width:100%;box-sizing:border-box;background:var(--bg-input);border:1px solid var(--border-strong);border-radius:var(--radius-sm);padding:11px 14px;color:var(--text-primary);font-family:var(--font-body);font-size:14px;outline:none;transition:border-color .2s}
+.profile-input:focus{border-color:var(--gold)}
+.field-row{display:flex;gap:8px;align-items:stretch}
+.check-btn{flex:none;min-width:44px;background:var(--bg-card);border:1px solid var(--border-strong);color:var(--green);border-radius:var(--radius-sm);font-size:18px;cursor:pointer;transition:.2s}
+.check-btn:hover:not(:disabled){border-color:var(--green);background:#1a2a1f}
+.check-btn:disabled{opacity:.35;cursor:not-allowed}
+.discord-field{flex:1;display:flex;align-items:center;background:var(--bg-input);border:1px solid var(--border-strong);border-radius:var(--radius-sm);transition:border-color .2s;min-width:0}
+.discord-field:focus-within{border-color:var(--gold)}
+.discord-at{padding:0 4px 0 14px;color:var(--text-dim);user-select:none;pointer-events:none}
+.discord-input{border:0;background:transparent;padding-left:2px}
+.field-hint{margin:0;font-size:12px;color:var(--text-dim);line-height:1.4}
+.field-hint.ok{color:var(--green)}
+.profile-btn{margin-top:6px;background:linear-gradient(180deg,#c9a03c 0%,#8a6a20 100%);border:1px solid #6a4f15;border-radius:var(--radius-sm);padding:12px;color:#0a0a0d;font-family:var(--font-display);font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:filter .2s}
+.profile-btn:hover{filter:brightness(1.15)}
+
+/* Команды */
+.teams-list{display:flex;flex-direction:column;gap:8px}
+.team-row{display:flex;align-items:stretch;gap:8px}
+.team-row-main{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:var(--font-body);font-size:15px;cursor:pointer;text-align:left;transition:border-color .2s,background .2s}
+.team-row-main:hover{border-color:var(--gold);background:var(--bg-card-hover)}
+.team-row-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.team-badge{flex:none;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--gold-hi);border:1px solid #5a4a1a;background:#2a2412;padding:2px 8px;border-radius:20px}
+.team-leave-btn{flex:none;width:52px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);color:#c46a6a;font-size:20px;cursor:pointer;transition:.2s}
+.team-leave-btn:hover{border-color:var(--red);background:#2a1515;color:var(--red)}
+.team-leave-btn.small{width:34px;font-size:15px}
+.team-add-tile{display:flex;align-items:center;justify-content:center;height:56px;background:transparent;border:2px dashed var(--border-strong);border-radius:var(--radius-sm);color:var(--text-muted);cursor:pointer;transition:.2s}
+.team-add-tile:hover{border-color:var(--gold);color:var(--gold-hi);background:#17150d}
+.team-add-tile svg{width:24px;height:24px}
+
+/* Диалоги */
+.app-dialog{max-width:460px}
+.app-dialog.wide{max-width:860px}
+.app-dialog .modal-title{padding:20px 56px 0 24px;margin:0}
+.app-dialog-body{padding:16px 24px 8px;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.app-dialog-actions{display:flex;justify-content:flex-end;gap:10px;padding:12px 24px 22px}
+.dlg-text{margin:0;color:var(--text-muted);font-size:14px;line-height:1.5}
+.dlg-field{display:flex;flex-direction:column;gap:6px}
+.dlg-btn{border-radius:var(--radius-sm);padding:10px 18px;font-family:var(--font-body);font-size:14px;cursor:pointer;border:1px solid var(--border-strong);transition:filter .2s,border-color .2s}
+.dlg-btn:disabled{opacity:.5;cursor:wait}
+.dlg-btn.ghost{background:transparent;color:var(--text-muted)}
+.dlg-btn.ghost:hover{border-color:var(--text-muted);color:var(--text-primary)}
+.dlg-btn.primary{background:linear-gradient(180deg,#c9a03c,#8a6a20);border-color:#6a4f15;color:#0a0a0d;font-weight:600}
+.dlg-btn.danger{background:#7a1f1f;border-color:#a33;color:#fff}
+.dlg-btn:hover:not(:disabled){filter:brightness(1.15)}
+.choice-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-bottom:12px}
+.choice-btn{padding:26px 12px;background:var(--bg-card);border:1px solid var(--border-strong);border-radius:var(--radius);color:var(--text-primary);font-family:var(--font-display);font-size:14px;letter-spacing:1px;cursor:pointer;transition:.2s}
+.choice-btn:hover{border-color:var(--gold);color:var(--gold-hi);background:var(--bg-card-hover)}
+.code-input{letter-spacing:3px;text-transform:uppercase;font-family:'Marcellus',var(--font-display)}
+
+/* Состав команды */
+.team-dialog{display:grid;gap:22px;padding-bottom:16px}
+.team-dialog.with-leader{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
+@media (max-width:720px){.team-dialog.with-leader{grid-template-columns:1fr}}
+.tm-list{display:flex;flex-direction:column;gap:6px;max-height:52vh;overflow:auto;padding-right:4px}
+.tm-item{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm)}
+.tm-head{display:flex;align-items:stretch}
+.tm-toggle{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:10px 12px;background:transparent;border:0;color:var(--text-primary);font-family:var(--font-body);font-size:14px;cursor:pointer;text-align:left}
+.tm-arrow{color:var(--text-dim);width:12px}
+.tm-nick{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tm-count{color:var(--text-dim);font-size:12px}
+.tm-head .team-leave-btn{margin:6px 6px 6px 0;border-radius:5px}
+.tm-chars{display:flex;flex-direction:column;gap:4px;padding:4px 12px 10px 34px;border-top:1px solid var(--border)}
+.tm-char{display:flex;align-items:center;gap:10px;font-size:13px}
+.tm-char-icon{width:20px;height:20px;flex:none;fill:currentColor;color:var(--silver)}
+.tm-char-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tm-char-gs,.tm-char-bs{flex:none;font-family:'Marcellus',var(--font-display);letter-spacing:1px}
+.tm-char-bs{min-width:84px;text-align:right}
+.tm-empty{color:var(--text-dim);font-size:12px;padding-top:6px}
+.team-dialog-leader{display:flex;flex-direction:column;gap:10px;border-left:1px solid var(--border);padding-left:22px}
+@media (max-width:720px){.team-dialog-leader{border-left:0;padding-left:0;border-top:1px solid var(--border);padding-top:16px}}
+.disband-btn{margin-top:auto}

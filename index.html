@@ -233,12 +233,6 @@
     <p id="login-error" class="login-error"></p>
   </div>
 
-  <section class="login-schedule-panel" aria-label="Публичное расписание рейдов">
-    <h2 class="raids-title">Расписание рейдов</h2>
-    <div class="schedule-scroll">
-      <div id="login-schedule-timeline" class="schedule-timeline"></div>
-    </div>
-  </section>
 </div>
 
 <!-- ============================================================
@@ -257,7 +251,7 @@
   </header>
 
   <!-- ОСНОВНАЯ ОБЛАСТЬ -->
-  <nav class="dragons-tabs" id="dragons-tabs"><button class="active" data-tab="schedule">Расписание</button><button data-tab="raids">Рейды</button></nav>
+  <nav class="dragons-tabs" id="dragons-tabs"><button class="active" data-tab="schedule">Расписание</button><button data-tab="raids">Рейды</button><button data-tab="profile">Профиль</button></nav>
   <div id="schedule-view">
   <div class="main-layout">
 
@@ -265,12 +259,23 @@
     <section class="raids-panel">
   <div class="raids-header">
     <h2 class="raids-title">Расписание рейдов</h2>
-    <button id="add-raid-btn" class="raid-add-btn" title="Создать рейд">
-      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <div class="schedule-tools">
+      <button id="expand-all-btn" class="tool-btn" type="button">Развернуть все</button>
+      <div class="filter-wrap">
+        <button id="filter-raids-btn" class="tool-btn" type="button">Рейды: все</button>
+        <div id="filter-raids-pop" class="filter-pop hidden"></div>
+      </div>
+      <div class="filter-wrap" id="filter-teams-wrap">
+        <button id="filter-teams-btn" class="tool-btn" type="button">КП: все</button>
+        <div id="filter-teams-pop" class="filter-pop hidden"></div>
+      </div>
+      <button id="add-raid-btn" class="raid-add-btn" title="Создать рейд">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
         <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
       </svg>
     </button>
+    </div>
   </div>
 
   <div class="schedule-scroll">
@@ -335,6 +340,42 @@
       </thead>
       <tbody id="raid-board-body"></tbody>
     </table>
+  </div>
+</section>
+<!-- ============================================================
+     ВКЛАДКА: ПРОФИЛЬ
+     ============================================================ -->
+<section id="profile-view" class="profile-view hidden">
+  <div class="profile-grid">
+    <div class="profile-card">
+      <h3 class="profile-h">Аккаунт</h3>
+
+      <label class="profile-label" for="profile-nickname">Ник</label>
+      <div class="field-row">
+        <input id="profile-nickname" class="profile-input" type="text" maxlength="32" autocomplete="off" spellcheck="false">
+        <button id="profile-nickname-save" class="check-btn" type="button" title="Сохранить ник">✓</button>
+      </div>
+
+      <label class="profile-label" for="profile-discord">Discord</label>
+      <div class="field-row">
+        <div class="discord-field">
+          <span class="discord-at">@</span>
+          <input id="profile-discord" class="profile-input discord-input" type="text" maxlength="32" autocomplete="off" spellcheck="false" placeholder="ваш ник в Discord">
+        </div>
+        <button id="profile-discord-save" class="check-btn" type="button" title="Сохранить и проверить ник">✓</button>
+      </div>
+      <p id="profile-discord-status" class="field-hint"></p>
+
+      <h3 class="profile-h profile-h-sub">Смена пароля</h3>
+      <input id="profile-pass-new" class="profile-input" type="password" placeholder="Новый пароль" autocomplete="new-password" maxlength="64">
+      <input id="profile-pass-confirm" class="profile-input" type="password" placeholder="Подтвердите новый пароль" autocomplete="new-password" maxlength="64">
+      <button id="profile-pass-save" class="profile-btn" type="button">Сменить пароль</button>
+    </div>
+
+    <div class="profile-card">
+      <h3 class="profile-h">Мои команды</h3>
+      <div id="teams-list" class="teams-list"></div>
+    </div>
   </div>
 </section>
 <!-- ============================================================
@@ -408,6 +449,17 @@
       <div class="raid-picker-label">День недели</div>
       <div id="raid-weekday-picker" class="weekday-picker" role="group" aria-label="День рейда"></div>
       <div id="raid-time-row" class="raid-datetime-row"><input type="time" id="raid-time-input" class="raid-time-input" value="20:00"></div>
+      <div id="raid-team-row" class="raid-team-row hidden">
+        <div class="raid-picker-label">КП</div>
+        <select id="raid-team-select" class="raid-team-select"></select>
+      </div>
+      <button type="button" id="raid-adv-toggle" class="raid-adv-toggle" aria-expanded="false" title="Дополнительно">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9l7 7 7-7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div id="raid-adv" class="raid-adv hidden">
+        <label class="raid-picker-label" for="raid-min-cp">Требуемый БС</label>
+        <input type="number" id="raid-min-cp" class="raid-time-input" min="0" step="1" placeholder="0" inputmode="numeric">
+      </div>
       <button id="raid-create-btn" class="raid-create-btn">Создать рейд</button>
     </div>
   </div>

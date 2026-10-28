@@ -14,8 +14,11 @@ import {
   signup,
   unsign,
   getRaidTypes,
+  getMyTeams,
+  getSession,
   supabase as dragonsSupabase,
 } from './api.js';
+import { initProfile, renderProfile } from './profile.js';
 import { refreshCharactersStats } from './stats.js';
 window.dragonsSupabase = dragonsSupabase;
 
@@ -40,6 +43,7 @@ const state = {
   // НОВОЕ:
   raids: [],              // все рейды расписания
   raidTypes: [],          // справочник рейдов из БД
+  teams: [],              // команды (КП), в которых состоит участник
     draggingCharacter: null,// персонаж, которого тащат
 };
 
@@ -87,17 +91,24 @@ async function init() {
     showScreen('offline');
     return;
   }
-  // Публичное расписание загружаем до авторизации. Ошибка чтения
-  // не должна блокировать вход или основной интерфейс.
-  await loadRaids(true);
-  renderSchedule();
-  // Проверяем сохранённую сессию
+  // Проверяем сохранённую сессию: пароль в браузере не хранится, но версия сессии
+  // должна совпадать с БД — после смены пароля старые входы перестают действовать.
   const savedMember = localStorage.getItem('kp_member');
   if (savedMember) {
     try {
-      state.member = JSON.parse(savedMember);
-      await enterMain();
-      return;
+      const saved = JSON.parse(savedMember);
+      const r = await getSession(saved.id);
+      if (r.error) { showScreen('offline'); return; }
+      const fresh = r.member;
+      const versionOk = fresh && (saved.session_version === undefined || saved.session_version === fresh.session_version);
+      if (versionOk) {
+        state.member = fresh;
+        saveMember();
+        await enterMain();
+        return;
+      }
+      localStorage.removeItem('kp_member');
+      if (fresh) showToast('Сессия завершена — войдите заново', 'error');
     } catch {
       localStorage.removeItem('kp_member');
     }
@@ -129,7 +140,7 @@ $('login-form').addEventListener('submit', async e => {
   }
   // Успех
   state.member = result.member;
-  localStorage.setItem('kp_member', JSON.stringify(state.member));
+  saveMember();
   await enterMain();
 });
 
@@ -147,6 +158,8 @@ function shakeElement(el, red = false) {
 async function enterMain() {
   $('header-nickname').textContent = state.member.nickname;
   showScreen('main');
+  loadFilters();
+  const teamsPromise = loadMyTeams();
 
   // Ничего не блокируем ожиданием справочников/расписания: сначала
   // показываем персонажей ровно в том виде, в котором они лежат в БД.
@@ -176,7 +189,7 @@ async function enterMain() {
   void syncStatsFromWorker();
 
   // Расписание и справочники догружаются независимо от списка персонажей.
-  const raidsPromise = loadRaids(true);
+  const raidsPromise = teamsPromise.then(() => loadRaids(true));
   await Promise.all([classesPromise, raidTypesPromise, raidsPromise]);
   renderSchedule();
   // Отметки прохождения нужны для иконок рейдов в списке персонажей
@@ -232,14 +245,34 @@ function errorsTotal(characters) {
 // ------------------------------------------------------------
 // ВЫХОД
 // ------------------------------------------------------------
-$('logout-btn').addEventListener('click', () => {
+function saveMember() {
+  try { localStorage.setItem('kp_member', JSON.stringify(state.member)); } catch {}
+}
+
+function doLogout(message) {
   localStorage.removeItem('kp_member');
   state.member = null;
   state.characters = [];
+  state.teams = [];
+  state.raids = [];
   state.editMode = false;
+  expandedRaids.clear();
   resetDraft();
   $('login-key').value = '';
   showScreen('login');
+  if (message) showToast(message, 'success');
+}
+$('logout-btn').addEventListener('click', () => doLogout());
+
+// Проверка сессии при возвращении на вкладку: сменили пароль на другом устройстве — выходим
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible' || !state.member) return;
+  const r = await getSession(state.member.id);
+  if (r.error) return;
+  if (!r.member || r.member.session_version !== state.member.session_version) {
+    doLogout();
+    showToast('Сессия завершена — войдите заново', 'error');
+  }
 });
 
 // ------------------------------------------------------------
@@ -734,7 +767,7 @@ $('new-char-name').addEventListener('keydown', e => {
 
 async function loadRaids(silent = false) {
   try {
-    const r = await getRaidsInRange();
+    const r = await getRaidsInRange(state.teams.map(t => t.id));
     if (r.error) {
       if (!silent) showToast('Не удалось загрузить рейды', 'error');
       return false;
@@ -752,47 +785,171 @@ async function loadRaids(silent = false) {
 // ------------------------------------------------------------
 // РЕНДЕР РАСПИСАНИЯ
 // ------------------------------------------------------------
+// Права: лидер КП рейда или создатель рейда
+function isRaidTeamLeader(raid) {
+  return !!state.member && raid.teams?.leader_id === state.member.id;
+}
+function canEditRaid(raid) {
+  return !!state.member && (isRaidTeamLeader(raid) || raid.created_by === state.member.id);
+}
+
+// ------------------------------------------------------------
+// ФИЛЬТРЫ РАСПИСАНИЯ (по рейду — не по сложности — и по КП)
+// Храним исключённые, чтобы новые рейды/КП по умолчанию были видны.
+// ------------------------------------------------------------
+const filters = { excludedRaids: new Set(), excludedTeams: new Set() };
+
+function loadFilters() {
+  try {
+    const f = JSON.parse(localStorage.getItem('kp_filters') || '{}');
+    filters.excludedRaids = new Set(f.raids || []);
+    filters.excludedTeams = new Set(f.teams || []);
+  } catch {}
+}
+function saveFilters() {
+  try {
+    localStorage.setItem('kp_filters', JSON.stringify({ raids: [...filters.excludedRaids], teams: [...filters.excludedTeams] }));
+  } catch {}
+}
+
+function visibleRaids() {
+  return state.raids.filter(r => !filters.excludedRaids.has(r.raid_types?.name) && !filters.excludedTeams.has(r.team_id));
+}
+
+function buildFilterPop(pop, options, excluded) {
+  pop.replaceChildren();
+  const row = (label, checked, onToggle) => {
+    const l = document.createElement('label');
+    l.className = 'filter-opt';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = checked;
+    cb.addEventListener('change', () => onToggle(cb.checked));
+    const t = document.createElement('span');
+    t.textContent = label;
+    l.append(cb, t);
+    return l;
+  };
+  const changed = () => { saveFilters(); renderSchedule(); };
+  pop.appendChild(row('Все', options.every(o => !excluded.has(o.key)), on => {
+    if (on) excluded.clear(); else options.forEach(o => excluded.add(o.key));
+    changed();
+  }));
+  for (const o of options) {
+    pop.appendChild(row(o.label, !excluded.has(o.key), on => {
+      if (on) excluded.delete(o.key); else excluded.add(o.key);
+      changed();
+    }));
+  }
+}
+
+function updateScheduleToolbar() {
+  const vis = visibleRaids();
+  const allOpen = vis.length > 0 && vis.every(r => expandedRaids.has(String(r.id)));
+  const exp = $('expand-all-btn');
+  exp.textContent = allOpen ? 'Свернуть все' : 'Развернуть все';
+  exp.disabled = vis.length === 0;
+
+  const raidOpts = boardRaids().map(g => ({ key: g.name, label: g.name }));
+  const raidSel = raidOpts.filter(o => !filters.excludedRaids.has(o.key)).length;
+  $('filter-raids-btn').textContent = 'Рейды: ' + (raidSel === raidOpts.length ? 'все' : raidSel + '/' + raidOpts.length) + ' ▾';
+  buildFilterPop($('filter-raids-pop'), raidOpts, filters.excludedRaids);
+
+  const teamOpts = state.teams.map(t => ({ key: t.id, label: t.name }));
+  const teamSel = teamOpts.filter(o => !filters.excludedTeams.has(o.key)).length;
+  $('filter-teams-wrap').classList.toggle('hidden', teamOpts.length < 2);
+  $('filter-teams-btn').textContent = 'КП: ' + (teamSel === teamOpts.length ? 'все' : teamSel + '/' + teamOpts.length) + ' ▾';
+  buildFilterPop($('filter-teams-pop'), teamOpts, filters.excludedTeams);
+
+  $('add-raid-btn').disabled = state.teams.length === 0;
+}
+
+$('expand-all-btn').addEventListener('click', () => {
+  const vis = visibleRaids();
+  const allOpen = vis.length > 0 && vis.every(r => expandedRaids.has(String(r.id)));
+  for (const r of vis) { if (allOpen) expandedRaids.delete(String(r.id)); else expandedRaids.add(String(r.id)); }
+  renderSchedule();
+});
+for (const [btn, pop] of [['filter-raids-btn', 'filter-raids-pop'], ['filter-teams-btn', 'filter-teams-pop']]) {
+  $(btn).addEventListener('click', e => {
+    e.stopPropagation();
+    const other = pop === 'filter-raids-pop' ? 'filter-teams-pop' : 'filter-raids-pop';
+    $(other).classList.add('hidden');
+    $(pop).classList.toggle('hidden');
+  });
+}
+document.addEventListener('click', e => {
+  if (e.target.closest?.('.filter-wrap')) return;
+  $('filter-raids-pop').classList.add('hidden');
+  $('filter-teams-pop').classList.add('hidden');
+});
+
+// ------------------------------------------------------------
+// КОМАНДЫ УЧАСТНИКА
+// ------------------------------------------------------------
+async function loadMyTeams() {
+  const r = await getMyTeams(state.member.id);
+  if (r.error) { showToast('Не удалось загрузить команды', 'error'); return false; }
+  state.teams = r.teams;
+  return true;
+}
+
+// Состав команд изменился (вступили/вышли/создали/распустили/изгнали)
+async function onTeamsChanged() {
+  await loadMyTeams();
+  await loadRaids(true);
+  renderSchedule();
+  renderProfile();
+  refreshRaidBoard();
+}
+
+// ------------------------------------------------------------
+// РЕНДЕР РАСПИСАНИЯ
+// ------------------------------------------------------------
 function renderSchedule() {
-  const roots = [$('login-schedule-timeline'), $('schedule-timeline')].filter(Boolean);
-  if (!roots.length) return;
+  const root = $('schedule-timeline');
+  if (!root) return;
   const days = [
     {v:3,n:'Среда'}, {v:4,n:'Четверг'}, {v:5,n:'Пятница'},
     {v:6,n:'Суббота'}, {v:7,n:'Воскресенье'},
     {v:1,n:'Понедельник'}, {v:2,n:'Вторник'}
   ];
+  const vis = visibleRaids();
   const used = days.map(d => ({
     ...d,
-    raids: state.raids.filter(r => Number(r.weekday) === d.v)
+    raids: vis.filter(r => Number(r.weekday) === d.v)
       .sort((a,b) => (a.start_time || '').localeCompare(b.start_time || ''))
   })).filter(d => d.raids.length);
 
-  for (const root of roots) {
-    root.innerHTML = '';
-    if (!used.length) {
-      root.innerHTML = '<div class="schedule-empty">Расписание пока пустое.</div>';
-      continue;
-    }
-    for (const d of used) {
-      const col = document.createElement('section');
-      col.className = 'weekday-column';
-      const h = document.createElement('h3');
-      h.className = 'weekday-title';
-      h.textContent = d.n;
-      col.appendChild(h);
-      const body = document.createElement('div');
-      body.className = 'weekday-cards';
-      col.appendChild(body);
-      for (const raid of d.raids) {
-        const card = buildRaidCard(raid);
-        const t = document.createElement('div');
-        t.className = 'weekday-time';
-        t.textContent = (raid.start_time || '20:00').slice(0,5) + ' МСК';
-        card.insertBefore(t, card.firstChild);
-        body.appendChild(card);
-      }
-      root.appendChild(col);
-    }
+  root.innerHTML = '';
+  if (!state.teams.length) {
+    root.innerHTML = '<div class="schedule-empty">Вы не состоите ни в одной команде. Откройте «Профиль», чтобы вступить в команду или создать свою.</div>';
+  } else if (!state.raids.length) {
+    root.innerHTML = '<div class="schedule-empty">Расписание пока пустое.</div>';
+  } else if (!used.length) {
+    root.innerHTML = '<div class="schedule-empty">Нет рейдов по выбранным фильтрам.</div>';
   }
+  for (const d of used) {
+    const col = document.createElement('section');
+    col.className = 'weekday-column';
+    const h = document.createElement('h3');
+    h.className = 'weekday-title';
+    h.textContent = d.n;
+    col.appendChild(h);
+    const body = document.createElement('div');
+    body.className = 'weekday-cards';
+    col.appendChild(body);
+    for (const raid of d.raids) {
+      const card = buildRaidCard(raid);
+      const t = document.createElement('div');
+      t.className = 'weekday-time';
+      t.textContent = (raid.start_time || '20:00').slice(0,5) + ' МСК';
+      card.insertBefore(t, card.firstChild);
+      body.appendChild(card);
+    }
+    root.appendChild(col);
+  }
+  updateScheduleToolbar();
 }
 
 function formatDayLabel(date) {
@@ -838,7 +995,7 @@ function buildRaidCard(raid) {
   const title = document.createElement('div');
   title.className = 'raid-card-title';
   title.textContent = rt.name;
-  if (state.member && (state.member.nickname === 'korozii' || raid.created_by === state.member.id)) {
+  if (canEditRaid(raid)) {
     title.classList.add('raid-card-title-editable');
     title.title = 'Нажми, чтобы изменить день и время';
     title.tabIndex = 0;
@@ -889,6 +1046,25 @@ function buildRaidCard(raid) {
 
   card.appendChild(header);
 
+  // Мета: название КП (если команд несколько) и требуемый БС
+  const meta = document.createElement('div');
+  meta.className = 'raid-card-meta';
+  if (state.teams.length > 1 && raid.teams?.name) {
+    const chip = document.createElement('span');
+    chip.className = 'raid-chip raid-chip-team';
+    chip.textContent = raid.teams.name;
+    meta.appendChild(chip);
+  }
+  const minCp = Number(raid.min_combat_power || 0);
+  if (minCp > 0) {
+    const chip = document.createElement('span');
+    chip.className = 'raid-chip raid-chip-bs';
+    chip.textContent = 'БС от ' + minCp.toLocaleString('ru-RU');
+    chip.title = 'Минимальный БС для записи';
+    meta.appendChild(chip);
+  }
+  if (meta.childNodes.length) card.appendChild(meta);
+
   // Список записавшихся
   const list = document.createElement('div');
   list.className = 'raid-card-signups';
@@ -923,7 +1099,7 @@ function buildRaidCard(raid) {
     row.appendChild(ilvl);
 
     // Кнопка удаления записи (свои или админ)
-    if (state.member && (s.member_id === state.member.id || state.member.nickname === 'korozii')) {
+    if (state.member && (s.member_id === state.member.id || isRaidTeamLeader(raid))) {
       const del = document.createElement('button');
       del.className = 'raid-signup-delete';
       del.title = 'Убрать с рейда';
@@ -951,7 +1127,7 @@ function buildRaidCard(raid) {
   // Права на удаление рейда
   function canDeleteRaid(raid) {
     if (!state.member) return false;
-    if (state.member.nickname === 'korozii') return true;
+    if (isRaidTeamLeader(raid)) return true;
     if (raid.created_by === state.member.id) {
       // Только если на рейде нет других записей кроме создателя
       const otherSignups = (raid.signups || []).filter(s => s.member_id !== raid.created_by);
@@ -996,7 +1172,7 @@ function buildRaidCard(raid) {
     });
 
     if (r.error) {
-      showToast('Ошибка записи', 'error');
+      showToast(r.error.code === 'P0001' && r.error.message ? r.error.message : 'Ошибка записи', 'error');
       console.error(r.error);
       return;
     }
@@ -1019,6 +1195,12 @@ function validateSignup(raid, character) {
   // ГС
   if (parseFloat(character.item_level) < parseFloat(rt.required_ilvl)) {
     return `Нужен ГС ${rt.required_ilvl}, у ${character.name} — ${character.item_level}`;
+  }
+
+  // Минимальный БС, заданный создателем рейда
+  const minCp = Number(raid.min_combat_power || 0);
+  if (minCp > 0 && Number(character.combat_power || 0) < minCp) {
+    return `Лидер установил требуемый БС: ${minCp.toLocaleString('ru-RU')}`;
   }
 
   // Полнота
@@ -1067,13 +1249,43 @@ function closeRaidModal() {
   state.editingRaidId = null;
 }
 
+function setRaidAdvanced(open) {
+  $('raid-adv').classList.toggle('hidden', !open);
+  $('raid-adv-toggle').setAttribute('aria-expanded', String(open));
+  $('raid-adv-toggle').classList.toggle('open', open);
+}
+$('raid-adv-toggle').addEventListener('click', () => setRaidAdvanced($('raid-adv').classList.contains('hidden')));
+
+function prepareRaidExtras(raid) {
+  // КП выбираем только при создании и только если команд несколько
+  const sel = $('raid-team-select');
+  sel.replaceChildren();
+  for (const t of state.teams) {
+    const o = document.createElement('option');
+    o.value = t.id;
+    o.textContent = t.name;
+    sel.appendChild(o);
+  }
+  if (state.lastRaidTeam && state.teams.some(t => t.id === state.lastRaidTeam)) sel.value = state.lastRaidTeam;
+  $('raid-team-row').classList.toggle('hidden', !!raid || state.teams.length < 2);
+  // Минимальный БС: по умолчанию пусто (0)
+  const cp = Number(raid?.min_combat_power || 0);
+  $('raid-min-cp').value = cp > 0 ? String(cp) : '';
+  setRaidAdvanced(cp > 0);
+}
+
 function openRaidModal(raid = null) {
+  if (!raid && state.teams.length === 0) {
+    showToast('Сначала вступите в команду или создайте свою (вкладка «Профиль»)', 'error');
+    return;
+  }
   state.editingRaidId = raid?.id || null;
   state.selectedRaidWeekday = Number(raid?.weekday || 3);
   $('modal-raid').classList.add('active');
   $('raid-create-btn').textContent = raid ? 'Сохранить изменения' : 'Создать рейд';
+  prepareRaidExtras(raid);
   if (raid) {
-    // Редактирование: тип и сложность рейда не меняются — только день и время
+    // Редактирование: тип и сложность рейда не меняются — только день, время и мин. БС
     const rt = raid.raid_types || state.raidTypes.find(x => x.id === raid.raid_type_id);
     state.pendingRaidType = rt;
     $('raid-step-1').classList.remove('active');
@@ -1162,6 +1374,7 @@ $('raid-create-btn').addEventListener('click', async () => {
     const r = await updateRaid(state.editingRaidId, {
       weekday: state.selectedRaidWeekday,
       start_time: $('raid-time-input').value || '20:00',
+      min_combat_power: parseInt($('raid-min-cp').value, 10) || 0,
     });
     if (r.error) {
       showToast('Не удалось изменить рейд', 'error');
@@ -1171,15 +1384,20 @@ $('raid-create-btn').addEventListener('click', async () => {
     closeRaidModal();
     showToast('Рейд изменён', 'success');
   } else {
+    const teamId = $('raid-team-select').value || state.teams[0]?.id;
+    if (!teamId) { showToast('Сначала вступите в команду', 'error'); return; }
+    state.lastRaidTeam = teamId;
     const r = await createRaid({
       raid_type_id: state.pendingRaidType.id,
       weekday: state.selectedRaidWeekday,
       start_time: $('raid-time-input').value || '20:00',
       max_players: state.pendingRaidType.size,
       created_by: state.member.id,
+      team_id: teamId,
+      min_combat_power: parseInt($('raid-min-cp').value, 10) || 0,
     });
     if (r.error) {
-      showToast('Не удалось создать рейд', 'error');
+      showToast(r.error.code === 'P0001' && r.error.message ? r.error.message : 'Не удалось создать рейд', 'error');
       console.error(r.error);
       return;
     }
@@ -1207,7 +1425,19 @@ function boardRaids() {
 }
 const boardKeys = () => boardRaids().map(g => g.key);
 const allDone = ch => { const k = boardKeys(); return k.length > 0 && k.every(x => doneMarks.get(ch.id + '|' + x) === true); };
-function setupTabs(){const nav=$('dragons-tabs');if(!nav)return;nav.querySelectorAll('[data-tab]').forEach(btn=>btn.addEventListener('click',()=>{nav.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===btn));$('schedule-view').classList.toggle('hidden',btn.dataset.tab!=='schedule');$('raids-view').classList.toggle('hidden',btn.dataset.tab!=='raids');if(btn.dataset.tab==='raids'){if(!raidBoardLoaded||raidBoardDirty)loadRaidBoard();}}));}
+function setupTabs() {
+  const nav = $('dragons-tabs');
+  if (!nav) return;
+  nav.querySelectorAll('[data-tab]').forEach(btn => btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    nav.querySelectorAll('[data-tab]').forEach(x => x.classList.toggle('active', x === btn));
+    $('schedule-view').classList.toggle('hidden', tab !== 'schedule');
+    $('raids-view').classList.toggle('hidden', tab !== 'raids');
+    $('profile-view').classList.toggle('hidden', tab !== 'profile');
+    if (tab === 'raids' && (!raidBoardLoaded || raidBoardDirty)) loadRaidBoard();
+    if (tab === 'profile') renderProfile();
+  }));
+}
 // ------------------------------------------------------------
 // ТАБЛИЧКА РЕЙДОВ
 // Таблица строится один раз, дальше только точечно обновляется.
@@ -1543,4 +1773,10 @@ $('raid-clear-btn')?.addEventListener('click', async () => {
 // ------------------------------------------------------------
 // СТАРТ
 // ------------------------------------------------------------
+initProfile({
+  state, $, showToast, getIconViewBox, getGsClass, saveMember,
+  logout: doLogout,
+  onMemberUpdated: () => { $('header-nickname').textContent = state.member.nickname; },
+  onTeamsChanged,
+});
 init();
