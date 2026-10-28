@@ -408,3 +408,25 @@ export async function disbandTeam(teamId) {
   if (error) return { error: teamError(error) };
   return { success: true };
 }
+
+// ============================================================
+// КРАТКИЙ ПРОФИЛЬ УЧАСТНИКА (окно по клику на игрока в расписании)
+// ============================================================
+export async function getMemberProfile(memberId) {
+  const m = await supabase.from('members').select('id, nickname, discord_name, discord_verified_at').eq('id', memberId).maybeSingle();
+  if (m.error) return { error: m.error };
+  if (!m.data) return { error: new Error('not_found') };
+  const c = await supabase.from('characters')
+    .select('id, name, item_level, combat_power, sort_order, classes(id, name, role, icon_id)')
+    .eq('member_id', memberId)
+    .order('sort_order', { ascending: true, nullsFirst: false });
+  if (c.error) return { error: c.error };
+  const chars = c.data || [];
+  let progress = [];
+  if (chars.length) {
+    const p = await supabase.from('character_raid_progress').select('character_id, raid_key, completed').in('character_id', chars.map(x => x.id)).eq('completed', true);
+    if (p.error) return { error: p.error };
+    progress = p.data || [];
+  }
+  return { member: m.data, characters: chars, progress };
+}

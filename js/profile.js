@@ -6,10 +6,10 @@
 // ============================================================
 import {
   updateNickname, changePassword, verifyPassword, updateDiscordName,
-  getTeamDetails, createTeam, joinTeam, removeTeamMember, setInviteCode, disbandTeam,
+  getTeamDetails, getMemberProfile, createTeam, joinTeam, removeTeamMember, setInviteCode, disbandTeam,
 } from './api.js';
 
-let ctx = null;   // { state, $, showToast, getIconViewBox, getGsClass, saveMember, logout, onMemberUpdated, onTeamsChanged }
+let ctx = null;   // { boardRaids, makeRaidIcon, state, $, showToast, getIconViewBox, getGsClass, saveMember, logout, onMemberUpdated, onTeamsChanged }
 
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
@@ -446,4 +446,86 @@ function openDisbandDialog(team, teamDialogApi) {
       } },
     ],
   });
+}
+
+// ------------------------------------------------------------
+// КРАТКИЙ ПРОФИЛЬ УЧАСТНИКА (по клику на игрока в расписании)
+// Ник, Discord, персонажи; иконки рейдов: жёлтый — записан, зелёный — пройден
+// ------------------------------------------------------------
+const WEEKDAYS = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+export function openMemberProfile(memberId, fallbackNick = '') {
+  openDialog({
+    title: fallbackNick || 'Профиль',
+    wide: true,
+    build: async (body, api) => {
+      body.appendChild(el('div', 'tm-empty', 'Загрузка…'));
+      const r = await getMemberProfile(memberId);
+      body.replaceChildren();
+      if (r.error) { body.appendChild(el('div', 'tm-empty', 'Не удалось загрузить профиль')); return; }
+      api.box.querySelector('.modal-title').textContent = r.member.nickname;
+
+      const head = el('div', 'mp-head');
+      head.appendChild(el('span', 'profile-label', 'Discord'));
+      const dn = r.member.discord_name;
+      const dv = el('span', 'mp-discord' + (dn ? '' : ' empty'), dn ? '@' + dn : 'не указан');
+      if (dn && r.member.discord_verified_at) { dv.classList.add('verified'); dv.title = 'Подтверждён'; }
+      head.appendChild(dv);
+      body.appendChild(head);
+
+      // записи этого игрока в рейдах команд, которые видит текущий пользователь
+      const signedBy = new Map();   // character_id|raid_key -> «Пн 20:00»
+      for (const raid of ctx.state.raids || []) {
+        for (const s of raid.signups || []) {
+          if (s.member_id !== memberId) continue;
+          const key = s.character_id + '|' + (raid.raid_types?.icon_id || raid.raid_types?.name);
+          signedBy.set(key, `${WEEKDAYS[raid.weekday] || ''} ${String(raid.start_time || '').slice(0, 5)}`.trim());
+        }
+      }
+      const keyByName = new Map(ctx.boardRaids().map(g => [g.name, g.key]));
+      const done = new Set(r.progress.map(p => p.character_id + '|' + (keyByName.get(p.raid_key) || p.raid_key)));
+
+      body.appendChild(el('div', 'profile-label', 'Персонажи'));
+      const list = el('div', 'mp-chars');
+      if (!r.characters.length) list.appendChild(el('div', 'tm-empty', 'Нет персонажей'));
+      for (const ch of r.characters) list.appendChild(viewCharCard(ch, signedBy, done));
+      body.appendChild(list);
+    },
+  });
+}
+
+function viewCharCard(ch, signedBy, done) {
+  const card = el('div', 'char-card');
+  const iconWrap = el('div', 'char-icon-wrap');
+  iconWrap.appendChild(el('span', 'shine'));
+  const iconId = ch.classes?.icon_id || 'berserker';
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'char-icon');
+  svg.setAttribute('viewBox', ctx.getIconViewBox(iconId));
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', '#' + iconId);
+  svg.appendChild(use);
+  iconWrap.appendChild(svg);
+
+  const info = el('div', 'char-info');
+  info.appendChild(el('div', 'char-name', ch.name));
+  const stats = el('div', 'char-stats');
+  const hasGs = ch.item_level !== null && ch.item_level !== undefined;
+  const hasBs = ch.combat_power !== null && ch.combat_power !== undefined;
+  stats.appendChild(el('span', ctx.getGsClass(ch.item_level), hasGs ? String(ch.item_level) : ''));
+  stats.appendChild(el('span', ch.classes?.role === 'SUPPORT' ? 'bs-support' : 'bs-dps', hasBs ? String(ch.combat_power) : ''));
+  info.appendChild(stats);
+
+  const raids = el('div', 'char-raids');
+  for (const g of ctx.boardRaids()) {
+    const k = ch.id + '|' + g.key;
+    const isDone = done.has(k), when = signedBy.get(k);
+    if (!isDone && !when) continue;
+    const item = el('span', 'char-raid ' + (isDone ? 'done' : 'signed'));
+    item.title = g.name + (isDone ? ' — пройден' : ' — записан: ' + when);
+    item.appendChild(ctx.makeRaidIcon(g, 'char-raid-icon'));
+    raids.appendChild(item);
+  }
+  card.append(iconWrap, info, raids);
+  return card;
 }

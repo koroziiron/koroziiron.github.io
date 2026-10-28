@@ -18,7 +18,7 @@ import {
   getSession,
   supabase as dragonsSupabase,
 } from './api.js';
-import { initProfile, renderProfile } from './profile.js';
+import { initProfile, renderProfile, openMemberProfile } from './profile.js';
 import { refreshCharactersStats } from './stats.js';
 window.dragonsSupabase = dragonsSupabase;
 
@@ -1090,6 +1090,11 @@ function buildRaidCard(raid) {
     name.textContent = s.characters?.name || '???';
     row.appendChild(name);
 
+    // клик по игроку — краткий профиль (ник, Discord, персонажи, записи и пройденные рейды)
+    row.classList.add('clickable');
+    row.title = 'Открыть профиль игрока';
+    row.addEventListener('click', () => openMemberProfile(s.member_id));
+
     const ilvl = document.createElement('span');
     // В расписании показываем БС — окрашиваем его по цвету БС (как в «Мои персонажи»), а не по ГС
     const role = s.characters?.classes?.role || s.characters?.role || 'DPS';
@@ -1795,7 +1800,7 @@ $('raid-clear-btn')?.addEventListener('click', async () => {
 // СТАРТ
 // ------------------------------------------------------------
 initProfile({
-  state, $, showToast, getIconViewBox, getGsClass, saveMember,
+  state, $, showToast, getIconViewBox, getGsClass, saveMember, boardRaids, makeRaidIcon,
   logout: doLogout,
   onMemberUpdated: () => { $('header-nickname').textContent = state.member.nickname; },
   onTeamsChanged,

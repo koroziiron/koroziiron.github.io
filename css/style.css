@@ -1541,3 +1541,14 @@ SVG-ГРАДИЕНТЫ (скрытые)
 /* ===== Скрываем системные полосы прокрутки везде (прокрутка работает) ===== */
 html, body, * { scrollbar-width: none; -ms-overflow-style: none; }
 *::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+/* Краткий профиль игрока (клик по игроку в расписании) */
+.raid-signup-row.clickable{cursor:pointer}
+.raid-signup-row.clickable:hover .raid-signup-name{text-decoration:underline;text-underline-offset:3px}
+.mp-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.mp-head .profile-label{margin:0}
+.mp-discord{font-weight:600}
+.mp-discord.empty{opacity:.55;font-weight:400}
+.mp-discord.verified::after{content:' ✓';color:#46d17a}
+.mp-chars{display:flex;flex-direction:column;gap:8px;max-height:min(60vh,520px);overflow-y:auto}
+.mp-chars .char-card{cursor:default}
