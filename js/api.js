@@ -280,11 +280,20 @@ export async function getSession(memberId) {
   return { member: data || null };
 }
 
+// Разбор ошибок записи в members: 42501 — нет прав в БД, 23505 — уникальность
+function memberWriteError(error, uniqueCode) {
+  console.error('members write failed:', error);
+  if (error?.code === '42501') return 'forbidden';
+  if (error?.code === '23505') return uniqueCode;
+  if (error?.code === '23514') return 'invalid';
+  return 'server';
+}
+
 export async function updateNickname(memberId, nickname) {
   const n = String(nickname || '').trim();
   if (n.length < 2 || n.length > 32) return { error: 'invalid' };
   const { data, error } = await supabase.from('members').update({ nickname: n }).eq('id', memberId).select(MEMBER_FIELDS).single();
-  if (error) return { error: error.code === '23505' ? 'taken' : 'server' };
+  if (error) return { error: memberWriteError(error, 'taken') };
   return { member: data };
 }
 
@@ -296,7 +305,7 @@ export async function changePassword(memberId, newKey) {
   const { error } = await supabase.from('members')
     .update({ access_key_hash: hash, password_changed_at: new Date().toISOString(), session_version: cur.data.session_version + 1 })
     .eq('id', memberId).eq('session_version', cur.data.session_version);
-  if (error) return { error: error.code === '23505' ? 'unavailable' : 'server' };
+  if (error) return { error: memberWriteError(error, 'unavailable') };
   return { success: true };
 }
 
@@ -312,7 +321,7 @@ export async function updateDiscordName(memberId, rawName) {
   const name = String(rawName || '').trim().replace(/^@+/, '').toLowerCase();
   if (name && !/^[a-z0-9_.]{2,32}$/.test(name)) return { error: 'invalid' };
   const { data, error } = await supabase.from('members').update({ discord_name: name || null }).eq('id', memberId).select(MEMBER_FIELDS).single();
-  if (error) return { error: 'server' };
+  if (error) return { error: memberWriteError(error, 'invalid') };
   return { member: data };
 }
 

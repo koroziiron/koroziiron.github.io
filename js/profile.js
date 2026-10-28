@@ -102,6 +102,7 @@ function errText(code, fallback = 'Ошибка сервера, попробуй
     not_found: 'Команда с таким кодом не найдена',
     already: 'Вы уже состоите в этой команде',
     unavailable: 'Этот пароль использовать нельзя, выберите другой',
+    forbidden: 'Нет прав на запись в базе (GRANT UPDATE на members)',
     server: fallback,
   };
   if (known[code]) return known[code];
@@ -134,7 +135,7 @@ export function initProfile(c) {
   });
   $('profile-discord-save').addEventListener('click', async () => {
     const r = await updateDiscordName(me().id, dInput.value);
-    if (r.error) { ctx.showToast(errText(r.error, 'Ник Discord: 2–32 символа, a–z, 0–9, _ и .'), 'error'); return; }
+    if (r.error) { ctx.showToast(r.error === 'invalid' ? 'Ник Discord: 2–32 символа, a–z, 0–9, _ и .' : errText(r.error), 'error'); return; }
     ctx.state.member = { ...me(), ...r.member };
     ctx.saveMember();
     renderDiscordStatus();

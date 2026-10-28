@@ -1267,7 +1267,8 @@ function prepareRaidExtras(raid) {
     sel.appendChild(o);
   }
   if (state.lastRaidTeam && state.teams.some(t => t.id === state.lastRaidTeam)) sel.value = state.lastRaidTeam;
-  $('raid-team-row').classList.toggle('hidden', !!raid || state.teams.length < 2);
+  $('raid-team-row').classList.toggle('hidden', !!raid);   // КП выбирается только при создании, всегда видна
+  sel.disabled = state.teams.length < 2;
   // Минимальный БС: по умолчанию пусто (0)
   const cp = Number(raid?.min_combat_power || 0);
   $('raid-min-cp').value = cp > 0 ? String(cp) : '';
