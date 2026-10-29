@@ -214,12 +214,30 @@ export async function updateRaid(raidId, { weekday, start_time, min_combat_power
 // Удалить рейд
 // ------------------------------------------------------------
 export async function deleteRaid(raidId) {
+  // сначала снимаем записи (на случай, если в БД нет каскадного удаления)
+  const su = await supabase.from('signups').delete().eq('raid_id', raidId);
+  if (su.error) { console.error('delete signups failed:', su.error); return { error: su.error }; }
   const { error } = await supabase
     .from('raids')
     .delete()
     .eq('id', raidId);
 
-  if (error) return { error };
+  if (error) { console.error('delete raid failed:', error); return { error }; }
+  return { success: true };
+}
+
+// Отметка «рейд пройден» (status: 'done' | 'open'). Записываться на пройденный рейд по-прежнему можно.
+export async function setRaidStatus(raidId, status) {
+  const { error } = await supabase.from('raids').update({ status }).eq('id', raidId);
+  if (error) { console.error('set raid status failed:', error); return { error }; }
+  return { success: true };
+}
+
+// Лидер: снять отметки «пройден» у всех рейдов своих команд
+export async function resetRaidsDone(teamIds) {
+  if (!teamIds.length) return { success: true };
+  const { error } = await supabase.from('raids').update({ status: 'open' }).in('team_id', teamIds).eq('status', 'done');
+  if (error) { console.error('reset raids done failed:', error); return { error }; }
   return { success: true };
 }
 

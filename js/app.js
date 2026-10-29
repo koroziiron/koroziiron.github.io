@@ -11,6 +11,8 @@ import {
   createRaid,
   updateRaid,
   deleteRaid,
+  setRaidStatus,
+  resetRaidsDone,
   signup,
   unsign,
   getRaidTypes,
@@ -845,6 +847,10 @@ function buildFilterPop(pop, options, excluded) {
 
 function updateScheduleToolbar() {
   const vis = visibleRaids();
+  const ledTeams = state.teams.filter(t => state.member && t.leader_id === state.member.id);
+  const resetBtn = $('reset-done-btn');
+  resetBtn.classList.toggle('hidden', ledTeams.length === 0);
+  resetBtn.disabled = !state.raids.some(r => r.status === 'done' && ledTeams.some(t => t.id === r.team_id));
   const allOpen = vis.length > 0 && vis.every(r => expandedRaids.has(String(r.id)));
   const exp = $('expand-all-btn');
   exp.textContent = allOpen ? 'Свернуть все' : 'Развернуть все';
@@ -863,6 +869,17 @@ function updateScheduleToolbar() {
 
   $('add-raid-btn').disabled = state.teams.length === 0;
 }
+
+$('reset-done-btn').addEventListener('click', async () => {
+  const led = state.teams.filter(t => t.leader_id === state.member?.id);
+  if (!led.length) return;
+  if (!confirm('Снять отметки о прохождении со всех рейдов' + (led.length > 1 ? ' ваших КП' : ' «' + led[0].name + '»') + '?')) return;
+  const r = await resetRaidsDone(led.map(t => t.id));
+  if (r.error) { showToast('Не удалось снять отметки', 'error'); return; }
+  showToast('Отметки о прохождении сняты', 'success');
+  await loadRaids(true);
+  renderSchedule();
+});
 
 $('expand-all-btn').addEventListener('click', () => {
   const vis = visibleRaids();
@@ -1016,6 +1033,27 @@ function buildRaidCard(raid) {
   const mode = document.createElement('span');
   mode.className = 'raid-card-mode raid-mode-' + rt.mode.toLowerCase();
   mode.textContent = rt.mode;
+  const isDone = raid.status === 'done';
+  card.classList.toggle('raid-done', isDone);
+  if (isDone) mode.title = 'Рейд пройден';
+  if (canEditRaid(raid)) {
+    // клик по сложности — отметить рейд пройденным / снять отметку (лидер КП или создатель)
+    mode.classList.add('raid-mode-toggle');
+    mode.title = isDone ? 'Пройден. Нажмите, чтобы снять отметку' : 'Нажмите, чтобы отметить рейд пройденным';
+    mode.tabIndex = 0;
+    mode.setAttribute('role', 'button');
+    const toggle = async e => {
+      e.stopPropagation();
+      const next = isDone ? 'open' : 'done';
+      const r = await setRaidStatus(raid.id, next);
+      if (r.error) { showToast('Не удалось изменить отметку', 'error'); return; }
+      raid.status = next;
+      await loadRaids(true);
+      renderSchedule();
+    };
+    mode.addEventListener('click', toggle);
+    mode.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(e); } });
+  }
   header.appendChild(mode);
 
   const counter = document.createElement('div');
@@ -1104,7 +1142,7 @@ function buildRaidCard(raid) {
     row.appendChild(ilvl);
 
     // Кнопка удаления записи (свои или админ)
-    if (state.member && (s.member_id === state.member.id || isRaidTeamLeader(raid))) {
+    if (state.member && (s.member_id === state.member.id || canEditRaid(raid))) {
       const del = document.createElement('button');
       del.className = 'raid-signup-delete';
       del.title = 'Убрать с рейда';
@@ -1129,16 +1167,9 @@ function buildRaidCard(raid) {
 
   card.appendChild(list);
 
-  // Права на удаление рейда
+  // Удалять рейд (и снимать любых записавшихся) может лидер КП или создатель рейда
   function canDeleteRaid(raid) {
-    if (!state.member) return false;
-    if (isRaidTeamLeader(raid)) return true;
-    if (raid.created_by === state.member.id) {
-      // Только если на рейде нет других записей кроме создателя
-      const otherSignups = (raid.signups || []).filter(s => s.member_id !== raid.created_by);
-      return otherSignups.length === 0;
-    }
-    return false;
+    return canEditRaid(raid);
   }
 
   // Drop-зона
