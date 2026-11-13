@@ -22,6 +22,7 @@ import {
 } from './api.js';
 import { initProfile, renderProfile, openMemberProfile } from './profile.js';
 import { refreshCharactersStats } from './stats.js';
+import { apiEnabled, apiLogin, apiRefreshStats, clearApiToken } from './server-api.js';
 window.dragonsSupabase = dragonsSupabase;
 
 // ------------------------------------------------------------
@@ -143,6 +144,7 @@ $('login-form').addEventListener('submit', async e => {
   // Успех
   state.member = result.member;
   saveMember();
+  if (apiEnabled()) await apiLogin(key);   // токен для нашего API (ГС/БС); при ошибке просто идём дальше
   await enterMain();
 });
 
@@ -213,6 +215,28 @@ async function syncStatsFromWorker() {
   if (statsSyncing) return;
   statsSyncing = true;
   try {
+    if (apiEnabled()) {
+      // Новый путь: ГС/БС обновляет и сохраняет в БД наш сервер, сайт только забирает результат.
+      const r = await apiRefreshStats();
+      if (r.error) { console.warn('stats via API:', r.error); return; }
+      const byId = new Map(r.characters.map(c => [String(c.id), c]));
+      let n = 0;
+      for (const ch of state.characters) {
+        const fresh = byId.get(String(ch.id));
+        if (!fresh) continue;
+        if (fresh.item_level !== ch.item_level || fresh.combat_power !== ch.combat_power) {
+          ch.item_level = fresh.item_level;
+          ch.combat_power = fresh.combat_power;
+          n++;
+        }
+      }
+      if (n > 0) {
+        showToast(`ГС/БС обновлены: ${n} шт.`, 'success');
+        renderCharacters();
+        syncRaidBoardWithCharacters();
+      }
+      return;
+    }
     const { changed } = await refreshCharactersStats(
       state.characters,
       async (patches) => {
@@ -253,6 +277,7 @@ function saveMember() {
 
 function doLogout(message) {
   localStorage.removeItem('kp_member');
+  clearApiToken();
   state.member = null;
   state.characters = [];
   state.teams = [];
