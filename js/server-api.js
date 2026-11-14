@@ -8,9 +8,10 @@ const TOKEN_KEY = 'kp_api_token';
 
 
 function getToken() {
+  // срок жизни решает сервер (скользящий): при недействительном токене он ответит 401
   try {
     const t = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null');
-    if (t && t.token && new Date(t.expires_at) > new Date()) return t.token;
+    if (t && t.token) return t.token;
   } catch {}
   return null;
 }
