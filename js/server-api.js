@@ -6,7 +6,6 @@ import { API_BASE } from '../supabase-config.js';
 
 const TOKEN_KEY = 'kp_api_token';
 
-export const apiEnabled = () => !!API_BASE;
 
 function getToken() {
   try {

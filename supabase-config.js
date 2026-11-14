@@ -12,5 +12,5 @@ export const SUPABASE_KEY = 'sb_publishable_DYrMWxijgmYZjf5Q3pgR4g_pBYweW0k';
 export const ACCESS_KEY_SALT = 'drugs';
 
 // Адрес нашего API (без слеша на конце), например 'https://имя.duckdns.org'.
-// Пусто — API не используется, ГС/БС берутся по-старому через прокси.
-export const API_BASE = '';
+// Через него идёт обновление ГС/БС.
+export const API_BASE = 'https://koroziiron.duckdns.org';

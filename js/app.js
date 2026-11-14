@@ -21,8 +21,7 @@ import {
   supabase as dragonsSupabase,
 } from './api.js';
 import { initProfile, renderProfile, openMemberProfile } from './profile.js';
-import { refreshCharactersStats } from './stats.js';
-import { apiEnabled, apiLogin, apiRefreshStats, clearApiToken } from './server-api.js';
+import { apiLogin, apiRefreshStats, clearApiToken } from './server-api.js';
 window.dragonsSupabase = dragonsSupabase;
 
 // ------------------------------------------------------------
@@ -144,7 +143,7 @@ $('login-form').addEventListener('submit', async e => {
   // Успех
   state.member = result.member;
   saveMember();
-  if (apiEnabled()) await apiLogin(key);   // токен для нашего API (ГС/БС); при ошибке просто идём дальше
+  await apiLogin(key);   // токен для нашего API (ГС/БС); при ошибке просто идём дальше
   await enterMain();
 });
 
@@ -190,7 +189,7 @@ async function enterMain() {
 
   // ГС/БС обновляются строго в фоне. Если источник недоступен,
   // значения из БД остаются как есть и пользователь ничего не замечает.
-  void syncStatsFromWorker();
+  void syncStatsViaApi();
 
   // Расписание и справочники догружаются независимо от списка персонажей.
   const raidsPromise = teamsPromise.then(() => loadRaids(true));
@@ -201,62 +200,43 @@ async function enterMain() {
 }
 
 // ------------------------------------------------------------
-// СИНХРОНИЗАЦИЯ ГС/БС ЧЕРЕЗ WORKER-ПРОКСИ
-//   1. для каждого персонажа запрашиваем страницу «Оружейная» через воркер;
-//   2. спарсенные ГС/БС сравниваем с текущими — при изменении обновляем
-//      объекты в state (панелька «Мои персонажи» перерисуется);
-//   3. изменения пушем в Supabase (saveChanges → updated).
+// СИНХРОНИЗАЦИЯ ГС/БС ЧЕРЕЗ НАШ API
+//   Сервер сам берёт ГС/БС с оружейки, сохраняет в БД (правило максимума)
+//   и возвращает актуальные значения; сайт только обновляет карточки.
 // Ошибки не блокируют вход: показываем то, что есть в базе.
 // ------------------------------------------------------------
 let statsSyncing = false;
 
-async function syncStatsFromWorker() {
+async function syncStatsViaApi() {
   if (!state.member || state.characters.length === 0) return;
   if (statsSyncing) return;
   statsSyncing = true;
   try {
-    if (apiEnabled()) {
-      // Новый путь: ГС/БС обновляет и сохраняет в БД наш сервер, сайт только забирает результат.
-      const r = await apiRefreshStats();
-      if (r.error) { console.warn('stats via API:', r.error); return; }
-      const byId = new Map(r.characters.map(c => [String(c.id), c]));
-      let n = 0;
-      for (const ch of state.characters) {
-        const fresh = byId.get(String(ch.id));
-        if (!fresh) continue;
-        if (fresh.item_level !== ch.item_level || fresh.combat_power !== ch.combat_power) {
-          ch.item_level = fresh.item_level;
-          ch.combat_power = fresh.combat_power;
-          n++;
-        }
-      }
-      if (n > 0) {
-        showToast(`ГС/БС обновлены: ${n} шт.`, 'success');
-        renderCharacters();
-        syncRaidBoardWithCharacters();
+    const r = await apiRefreshStats();
+    if (r.error) {
+      console.warn('stats via API:', r.error);
+      if (r.error === 'no_token' || r.error === 'unauthorized') {
+        showToast('Чтобы обновлять ГС/БС, выйдите и войдите заново', 'info');
       }
       return;
     }
-    const { changed } = await refreshCharactersStats(
-      state.characters,
-      async (patches) => {
-        // Сначала пытаемся сохранить новые ГС/БС в БД.
-        // Сам refreshCharactersStats применит patches к state только после
-        // успешного сохранения. При любой ошибке оставляем значения из БД.
-        return saveChanges(state.member.id, {
-          inserted: [],
-          updated: patches,
-          deleted: [],
-        });
+    const byId = new Map(r.characters.map(c => [String(c.id), c]));
+    let n = 0;
+    for (const ch of state.characters) {
+      const fresh = byId.get(String(ch.id));
+      if (!fresh) continue;
+      if (fresh.item_level !== ch.item_level || fresh.combat_power !== ch.combat_power) {
+        ch.item_level = fresh.item_level;
+        ch.combat_power = fresh.combat_power;
+        n++;
       }
-    );
-
-    if (changed.length > 0) {
-      showToast(`ГС/БС обновлены: ${changed.length} шт.`, 'success');
+    }
+    if (n > 0) {
+      showToast(`ГС/БС обновлены: ${n} шт.`, 'success');
       renderCharacters();
       syncRaidBoardWithCharacters();
     }
-    // Ошибки источников намеренно никак не показываем пользователю.
+    return;
   } catch {
     // Фоновое обновление никогда не должно мешать уже загруженным данным.
   } finally {
