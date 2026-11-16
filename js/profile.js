@@ -5,7 +5,7 @@
 // Логика пока на сайте; позже переедет в API (сигнатуры функций api.js сохранятся).
 // ============================================================
 import {
-  updateNickname, changePassword, verifyPassword, updateDiscordName,
+  updateNickname, changePassword, updateDiscordName,
   getTeamDetails, getMemberProfile, createTeam, joinTeam, removeTeamMember, setInviteCode, disbandTeam,
 } from './api.js';
 
@@ -102,7 +102,7 @@ function errText(code, fallback = 'Ошибка сервера, попробуй
     not_found: 'Команда с таким кодом не найдена',
     already: 'Вы уже состоите в этой команде',
     unavailable: 'Этот пароль использовать нельзя, выберите другой',
-    forbidden: 'Нет прав на запись в базе (GRANT UPDATE на members)',
+    forbidden: 'Недостаточно прав',
     server: fallback,
   };
   if (known[code]) return known[code];
@@ -147,19 +147,22 @@ export function initProfile(c) {
   $('profile-pass-save').addEventListener('click', async () => {
     const p1 = $('profile-pass-new').value;
     const p2 = $('profile-pass-confirm').value;
-    if (p1.length < 8) { ctx.showToast('Пароль должен быть не короче 8 символов', 'error'); return; }
+    const cur = $('profile-pass-current').value;
+    if (!cur) { ctx.showToast('Введите текущий пароль', 'error'); return; }
+    if (p1.length < 10) { ctx.showToast('Пароль должен быть не короче 10 символов', 'error'); return; }
     if (p1 !== p2) { ctx.showToast('Пароли не совпадают', 'error'); return; }
     const ok = await confirmDialog({
       title: 'Смена пароля',
-      text: 'Пароль будет изменён, а вы выйдете из аккаунта на всех устройствах. Войти нужно будет с новым паролем. Продолжить?',
+      text: 'Пароль будет изменён, а на всех остальных устройствах вы выйдете из аккаунта. Продолжить?',
       okLabel: 'Сменить пароль',
     });
     if (!ok) return;
-    const r = await changePassword(me().id, p1);
+    const r = await changePassword(me().id, cur, p1);
     if (r.error) { ctx.showToast(errText(r.error), 'error'); return; }
+    $('profile-pass-current').value = '';
     $('profile-pass-new').value = '';
     $('profile-pass-confirm').value = '';
-    ctx.logout('Пароль изменён. Войдите с новым паролем.');
+    ctx.showToast('Пароль изменён', 'success');
   });
 }
 
@@ -435,10 +438,7 @@ function openDisbandDialog(team, teamDialogApi) {
       { label: 'Отмена', kind: 'ghost' },
       { label: 'Распустить', kind: 'danger', onClick: async () => {
         if (name.input.value.trim() !== team.name) { ctx.showToast('Название команды введено неверно', 'error'); return false; }
-        const v = await verifyPassword(me().id, pass.input.value);
-        if (v.error) { ctx.showToast(errText('server'), 'error'); return false; }
-        if (!v.ok) { ctx.showToast('Неверный пароль', 'error'); return false; }
-        const r = await disbandTeam(team.id);
+        const r = await disbandTeam(team.id, pass.input.value);
         if (r.error) { ctx.showToast(errText(r.error), 'error'); return false; }
         teamDialogApi.close();
         ctx.showToast(`Команда «${team.name}» распущена`, 'success');

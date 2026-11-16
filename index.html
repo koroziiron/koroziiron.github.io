@@ -224,7 +224,7 @@
         id="login-key"
         class="login-input"
         placeholder="Ключ доступа"
-        maxlength="64"
+        maxlength="128"
         autocomplete="off"
         spellcheck="false"
       >
@@ -368,8 +368,9 @@
       <p id="profile-discord-status" class="field-hint"></p>
 
       <h3 class="profile-h profile-h-sub">Смена пароля</h3>
-      <input id="profile-pass-new" class="profile-input" type="password" placeholder="Новый пароль" autocomplete="new-password" maxlength="64">
-      <input id="profile-pass-confirm" class="profile-input" type="password" placeholder="Подтвердите новый пароль" autocomplete="new-password" maxlength="64">
+      <input id="profile-pass-current" class="profile-input" type="password" placeholder="Текущий пароль" autocomplete="current-password" maxlength="128">
+      <input id="profile-pass-new" class="profile-input" type="password" placeholder="Новый пароль" autocomplete="new-password" maxlength="128">
+      <input id="profile-pass-confirm" class="profile-input" type="password" placeholder="Подтвердите новый пароль" autocomplete="new-password" maxlength="128">
       <button id="profile-pass-save" class="profile-btn" type="button">Сменить пароль</button>
     </div>
 

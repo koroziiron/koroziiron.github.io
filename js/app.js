@@ -18,11 +18,14 @@ import {
   getRaidTypes,
   getMyTeams,
   getSession,
-  supabase as dragonsSupabase,
+  setGoldCoin,
+  saveCharacterOrder,
+  getProgress,
+  setProgress,
+  clearProgress,
 } from './api.js';
 import { initProfile, renderProfile, openMemberProfile } from './profile.js';
-import { apiLogin, apiRefreshStats, clearApiToken } from './server-api.js';
-window.dragonsSupabase = dragonsSupabase;
+import { apiRefreshStats, clearApiToken, setUnauthorizedHandler } from './server-api.js';
 
 // ------------------------------------------------------------
 // ГЛОБАЛЬНОЕ СОСТОЯНИЕ
@@ -102,8 +105,7 @@ async function init() {
       const r = await getSession(saved.id);
       if (r.error) { showScreen('offline'); return; }
       const fresh = r.member;
-      const versionOk = fresh && (saved.session_version === undefined || saved.session_version === fresh.session_version);
-      if (versionOk) {
+      if (fresh) {
         state.member = fresh;
         saveMember();
         await enterMain();
@@ -134,6 +136,11 @@ $('login-form').addEventListener('submit', async e => {
     showScreen('offline');
     return;
   }
+  if (result.error === 'locked') {
+    showToast(result.message || 'Слишком много попыток, попробуйте позже', 'error');
+    shakeElement($('login-form'), true);
+    return;
+  }
   if (result.error === 'invalid_key') {
     shakeElement($('login-form'), true);
     input.value = '';
@@ -143,7 +150,6 @@ $('login-form').addEventListener('submit', async e => {
   // Успех
   state.member = result.member;
   saveMember();
-  await apiLogin(key);   // токен для нашего API (ГС/БС); при ошибке просто идём дальше
   await enterMain();
 });
 
@@ -270,13 +276,21 @@ function doLogout(message) {
   if (message) showToast(message, 'success');
 }
 $('logout-btn').addEventListener('click', () => doLogout());
+let unauthorizedShown = false;
+setUnauthorizedHandler(() => {
+  if (!state.member || unauthorizedShown) return;
+  unauthorizedShown = true;
+  doLogout();
+  showToast('Сессия завершена — войдите заново', 'error');
+  setTimeout(() => { unauthorizedShown = false; }, 3000);
+});
 
 // Проверка сессии при возвращении на вкладку: сменили пароль на другом устройстве — выходим
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible' || !state.member) return;
   const r = await getSession(state.member.id);
   if (r.error) return;
-  if (!r.member || r.member.session_version !== state.member.session_version) {
+  if (!r.member) {
     doLogout();
     showToast('Сессия завершена — войдите заново', 'error');
   }
@@ -629,6 +643,7 @@ $('save-btn').addEventListener('click', async () => {
   }
   
   showToast('Сохранено', 'success');
+  if (inserted.length > 0) setTimeout(() => { void syncStatsViaApi(); }, 6000);
   state.editMode = false;
   resetDraft();
   $('edit-btn').classList.remove('hidden');
@@ -1208,8 +1223,6 @@ function buildRaidCard(raid) {
     const r = await signup({
       raid_id: raid.id,
       character_id: character.id,
-      member_id: state.member.id,
-      role: character.classes?.role || 'DPS',
     });
 
     if (r.error) {
@@ -1453,8 +1466,6 @@ $('raid-create-btn').addEventListener('click', async () => {
       raid_type_id: state.pendingRaidType.id,
       weekday: state.selectedRaidWeekday,
       start_time: $('raid-time-input').value || '20:00',
-      max_players: state.pendingRaidType.size,
-      created_by: state.member.id,
       team_id: teamId,
       min_combat_power: parseInt($('raid-min-cp').value, 10) || 0,
     });
@@ -1628,9 +1639,9 @@ async function loadProgressMarks() {
   const ids = state.characters.map(c => c.id).filter(id => !String(id).startsWith('temp_'));
   let progress = [];
   if (ids.length) {
-    const q = await dragonsSupabase.from('character_raid_progress').select('character_id,raid_key,completed').in('character_id', ids);
+    const q = await getProgress();
     if (q.error) return { error: q.error };
-    progress = q.data || [];
+    progress = q.progress || [];
   }
   doneMarks.clear();
   const keyByName = new Map(boardRaids().map(g => [g.name, g.key]));
@@ -1690,7 +1701,7 @@ async function loadRaidBoard() {
     coin.title = 'Сбор золота';
     coin.onclick = async () => {
       const v = ch.gold_coin_active === false;
-      const { error } = await dragonsSupabase.from('characters').update({ gold_coin_active: v }).eq('id', ch.id);
+      const { error } = await setGoldCoin(ch.id, v);
       if (error) { showToast('Не удалось сохранить', 'error'); return; }
       ch.gold_coin_active = v;
       coin.classList.toggle('muted', !v); // без перезагрузки таблички
@@ -1712,8 +1723,7 @@ async function loadRaidBoard() {
         updateProgressButton(btn, ch, g);
         tr.classList.toggle('all-done', allDone(ch));
         refreshCharRaidIcons();
-        const { error } = await dragonsSupabase.from('character_raid_progress')
-          .upsert({ character_id: ch.id, raid_key: g.name, completed: next, updated_at: new Date().toISOString() }, { onConflict: 'character_id,raid_key' });
+        const { error } = await setProgress(ch.id, g.name, next);
         if (error) {
           console.error('character_raid_progress upsert failed:', error);
           showToast('Не удалось сохранить отметку', 'error');
@@ -1787,9 +1797,8 @@ async function commitBoardOrder(body) {
   renderCharacters();
   raidBoardDirty = false;
   // 2. В БД — в фоне; при ошибке локальный порядок остаётся
-  const results = await Promise.all(order.map((id, i) =>
-    dragonsSupabase.from('characters').update({ sort_order: i + 1 }).eq('id', id)));
-  if (results.some(r => r.error)) showToast('Не удалось сохранить порядок', 'error');
+  const saved = await saveCharacterOrder(order);
+  if (saved.error) showToast('Не удалось сохранить порядок', 'error');
 }
 
 (function setupBoardDnD() {
@@ -1823,9 +1832,7 @@ $('raid-clear-btn')?.addEventListener('click', async () => {
   const marked = [...doneMarks.entries()].filter(([, v]) => v === true);
   if (!ids.length || !marked.length) { showToast('Отмеченных рейдов нет', 'info'); return; }
   if (!confirm('Снять все отметки о пройденных рейдах?')) return;
-  const { error } = await dragonsSupabase.from('character_raid_progress')
-    .update({ completed: false, updated_at: new Date().toISOString() })
-    .in('character_id', ids).eq('completed', true);
+  const { error } = await clearProgress();
   if (error) { showToast('Не удалось очистить отметки', 'error'); return; }
   doneMarks.clear();
   loadRaidBoard();
